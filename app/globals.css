@@ -1,26 +1,42 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf8f5; /* warm off-white */
+  --foreground: #1c1917; /* near-black, warm */
+  --accent: #7c5c3e; /* coffee */
+  --accent-foreground: #ffffff;
 }
 
+/* Tailwind v4: tokens declared here become utility classes
+   (e.g. --color-accent -> bg-accent / text-accent). No tailwind.config.js. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #1c1917;
+    --foreground: #f5f5f4;
+    --accent: #a97c50;
+    --accent-foreground: #1c1917;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Use the Geist font loaded in layout.tsx instead of the scaffold's Arial. */
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Remove the legacy 300ms tap delay on interactive elements (matters on iPad). */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
 }
