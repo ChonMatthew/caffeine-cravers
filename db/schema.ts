@@ -71,6 +71,20 @@ export const orderItems = pgTable(
   (t) => [check("order_items_qty_pos", sql`${t.quantity} > 0`)],
 );
 
+// --- login_attempts: rate-limiting state (shared across serverless calls) ----
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ip: text("ip").notNull(),
+    ok: boolean("ok").notNull(),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("login_attempts_ip_time_idx").on(t.ip, t.attemptedAt)],
+);
+
 // --- Inferred types: the app imports these instead of hand-writing shapes -----
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
