@@ -37,3 +37,20 @@ export async function getActiveItems(): Promise<Item[]> {
     .where(eq(items.isActive, true))
     .orderBy(asc(items.name));
 }
+
+type ItemWrite = { name: string; priceCents: number; category: string | null };
+
+export async function createItem(data: ItemWrite): Promise<void> {
+  await requireSession();
+  await db.insert(items).values(data);
+}
+
+export async function updateItem(id: string, data: ItemWrite): Promise<void> {
+  await requireSession();
+  await db.update(items).set(data).where(eq(items.id, id));
+}
+
+export async function setItemActive(id: string, active: boolean): Promise<void> {
+  await requireSession();
+  await db.update(items).set({ isActive: active }).where(eq(items.id, id));
+}

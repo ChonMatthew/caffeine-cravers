@@ -14,6 +14,9 @@ export default function PosLayout({
     <div className="flex min-h-full flex-col">
       <nav className="flex items-center gap-4 border-b border-foreground/10 p-3">
         <span className="font-semibold">Caffeine Cravers</span>
+        <Link href="/catalog" className="text-sm text-foreground/70">
+          Catalog
+        </Link>
         <Link href="/print-test" className="text-sm text-foreground/70">
           Printer
         </Link>
