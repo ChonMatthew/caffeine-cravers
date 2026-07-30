@@ -2,7 +2,7 @@
 // Usage:  npm run hash-pin -- 123456
 // Prints the env line to paste into .env.local and Vercel. Your PIN is never
 // stored or transmitted.
-import { hashPin } from "../lib/auth";
+import { hashPin } from "../src/lib/auth";
 
 const pin = process.argv[2];
 

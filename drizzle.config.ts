@@ -6,7 +6,7 @@ import { defineConfig } from "drizzle-kit";
 config({ path: ".env.local" });
 
 export default defineConfig({
-  schema: "./db/schema.ts", // source of truth for the tables
+  schema: "./src/db/schema.ts", // source of truth for the tables
   out: "./drizzle", // generated SQL migrations land here (committed to git)
   dialect: "postgresql",
   dbCredentials: {
