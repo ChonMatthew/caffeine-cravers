@@ -5,7 +5,13 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 
 import { db } from "@/db";
-import { items, type Item } from "@/db/schema";
+import {
+  items,
+  optionGroups,
+  options,
+  type Item,
+  type ItemWithOptions,
+} from "@/db/schema";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 // The real auth boundary. proxy.ts only redirects browsers; Server Actions are
@@ -53,4 +59,69 @@ export async function updateItem(id: string, data: ItemWrite): Promise<void> {
 export async function setItemActive(id: string, active: boolean): Promise<void> {
   await requireSession();
   await db.update(items).set({ isActive: active }).where(eq(items.id, id));
+}
+
+// --- catalog with variations -------------------------------------------------
+
+/**
+ * Every item with its option groups and options nested, ordered for display.
+ * One round-trip via the relational query API. Includes inactive items/options
+ * so the management screen can reactivate them.
+ */
+export async function getCatalog(): Promise<ItemWithOptions[]> {
+  await requireSession();
+  return db.query.items.findMany({
+    orderBy: (i, { asc }) => asc(i.name),
+    with: {
+      optionGroups: {
+        orderBy: (g, { asc }) => [asc(g.sortOrder), asc(g.name)],
+        with: {
+          options: {
+            orderBy: (o, { asc }) => [asc(o.sortOrder), asc(o.name)],
+          },
+        },
+      },
+    },
+  });
+}
+
+type GroupWrite = { name: string; required: boolean };
+
+export async function createOptionGroup(
+  itemId: string,
+  data: GroupWrite,
+): Promise<void> {
+  await requireSession();
+  await db.insert(optionGroups).values({ itemId, ...data });
+}
+
+/** Hard delete — cascades to the group's options. Safe: orders snapshot lines. */
+export async function deleteOptionGroup(id: string): Promise<void> {
+  await requireSession();
+  await db.delete(optionGroups).where(eq(optionGroups.id, id));
+}
+
+type OptionWrite = { name: string; priceDeltaCents: number };
+
+export async function createOption(
+  groupId: string,
+  data: OptionWrite,
+): Promise<void> {
+  await requireSession();
+  await db.insert(options).values({ groupId, ...data });
+}
+
+/** Hard delete a single option. Safe for the same reason as groups. */
+export async function deleteOption(id: string): Promise<void> {
+  await requireSession();
+  await db.delete(options).where(eq(options.id, id));
+}
+
+/** Soft toggle: hide an option from the order screen without losing the row. */
+export async function setOptionActive(
+  id: string,
+  active: boolean,
+): Promise<void> {
+  await requireSession();
+  await db.update(options).set({ isActive: active }).where(eq(options.id, id));
 }

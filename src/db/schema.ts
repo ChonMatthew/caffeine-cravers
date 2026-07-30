@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   check,
@@ -19,6 +19,8 @@ export const items = pgTable(
     // Money is stored as whole cents in an integer. Never a float/decimal.
     priceCents: integer("price_cents").notNull(),
     category: text("category"), // nullable
+    // Optional item photo. Column added now (free); the upload UI ships later.
+    imageUrl: text("image_url"), // nullable
     // Soft-delete: deactivate instead of deleting, so history stays intact.
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -27,6 +29,69 @@ export const items = pgTable(
   },
   (t) => [check("items_price_nonneg", sql`${t.priceCents} >= 0`)],
 );
+
+// --- option_groups: per-item choice groups, e.g. "Size", "Temp" ---------------
+// A group belongs to one item and holds mutually-exclusive options (single-
+// select). `required` means an order line for this item must pick one option.
+export const optionGroups = pgTable(
+  "option_groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Delete an item and its groups (and their options) go with it.
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // "Size", "Temp"
+    required: boolean("required").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  // We always read a group by its item, so index that foreign key.
+  (t) => [index("option_groups_item_idx").on(t.itemId)],
+);
+
+// --- options: the choices inside a group, each nudging the price --------------
+// `price_delta_cents` ADDS to the item's base price (Large = +200). No order
+// row points here (lines snapshot name+delta at sale time), so a row can be
+// hard-deleted safely; `is_active` just hides it from the order screen.
+export const options = pgTable(
+  "options",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => optionGroups.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // "Small", "Large", "Iced"
+    priceDeltaCents: integer("price_delta_cents").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("options_group_idx").on(t.groupId)],
+);
+
+// --- relations: ORM-only wiring (no SQL/migration) ---------------------------
+// These let `db.query.items.findMany({ with: { optionGroups: … } })` fetch the
+// whole nested shape in one query instead of hand-stitching three selects.
+export const itemsRelations = relations(items, ({ many }) => ({
+  optionGroups: many(optionGroups),
+}));
+
+export const optionGroupsRelations = relations(
+  optionGroups,
+  ({ one, many }) => ({
+    item: one(items, {
+      fields: [optionGroups.itemId],
+      references: [items.id],
+    }),
+    options: many(options),
+  }),
+);
+
+export const optionsRelations = relations(options, ({ one }) => ({
+  group: one(optionGroups, {
+    fields: [options.groupId],
+    references: [optionGroups.id],
+  }),
+}));
 
 // --- orders: one completed (or voided) sale ----------------------------------
 export const orders = pgTable(
@@ -74,6 +139,16 @@ export const orderItems = pgTable(
 // --- Inferred types: the app imports these instead of hand-writing shapes -----
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
+export type OptionGroup = typeof optionGroups.$inferSelect;
+export type NewOptionGroup = typeof optionGroups.$inferInsert;
+// Named ItemOption (not Option) to avoid clashing with the DOM's global Option.
+export type ItemOption = typeof options.$inferSelect;
+export type NewItemOption = typeof options.$inferInsert;
+
+// An item with its groups, each group with its options — the catalog read shape.
+export type ItemWithOptions = Item & {
+  optionGroups: (OptionGroup & { options: ItemOption[] })[];
+};
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;

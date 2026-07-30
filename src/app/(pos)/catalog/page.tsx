@@ -1,11 +1,12 @@
-import { getAllItems } from "@/lib/dal";
+import { getCatalog } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
 
 import { toggleItemActiveAction } from "./actions";
 import { ItemForm } from "./item-form";
+import { Variations } from "./variations";
 
 export default async function CatalogPage() {
-  const items = await getAllItems();
+  const items = await getCatalog();
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4">
@@ -43,6 +44,8 @@ export default async function CatalogPage() {
                 {item.isActive ? "Deactivate" : "Activate"}
               </button>
             </form>
+
+            <Variations item={item} />
           </div>
         ))}
       </section>
