@@ -1,6 +1,7 @@
 // Pure order/pricing logic — no React, no DB, no navigator. Kept side-effect
 // free so it unit-tests cleanly and behaves identically on server and client.
-// Phase 4 will grow this file with the cart reducer; for now it owns pricing.
+// Owns: option pricing, the cart reducer (client), and the server-side line
+// rebuild that recomputes prices from the catalog (never trust the client).
 
 /**
  * One option the operator picked for a line. We carry the delta (and name) so a
@@ -15,17 +16,255 @@ export type SelectedOption = {
 };
 
 /**
+ * What lands in `order_items.options_snapshot`: just the facts a receipt or
+ * report needs. Immune to later catalog edits/deletes.
+ */
+export type OptionSnapshot = {
+  name: string;
+  priceDeltaCents: number;
+};
+
+/**
  * An item's base price plus every chosen option's delta. Integer cents in,
  * integer cents out. Clamped at 0 so a stray negative delta can never produce a
  * negative line price — money math must never surprise the till.
  */
 export function resolveUnitPrice(
   baseCents: number,
-  selected: readonly SelectedOption[],
+  selected: readonly { priceDeltaCents: number }[],
 ): number {
   const total = selected.reduce(
     (sum, opt) => sum + opt.priceDeltaCents,
     baseCents,
   );
   return Math.max(0, total);
+}
+
+// ============================================================================
+// Cart reducer (client) — pure. lib/use-cart.ts wires it to useReducer +
+// localStorage + the idempotency key.
+// ============================================================================
+
+/** One ticket line: an item + its exact chosen option set + optional note. */
+export type CartLine = {
+  key: string; // identity: same key => same line, quantity merges
+  itemId: string;
+  itemName: string;
+  baseCents: number;
+  unitPriceCents: number; // base + option deltas, per unit
+  quantity: number;
+  note: string; // "" when none
+  options: SelectedOption[];
+};
+
+export type CartState = { lines: CartLine[] };
+
+export const EMPTY_CART: CartState = { lines: [] };
+
+export type CartAction =
+  | {
+      type: "add";
+      itemId: string;
+      itemName: string;
+      baseCents: number;
+      options: SelectedOption[];
+      note: string;
+      quantity: number;
+    }
+  | { type: "inc"; key: string }
+  | { type: "dec"; key: string }
+  | { type: "remove"; key: string }
+  | { type: "clear" }
+  | { type: "hydrate"; state: CartState };
+
+/**
+ * A line's identity. A line = item + its exact chosen option set + note. Same
+ * item + same options + same note merges (quantity ++); a different option set
+ * or note splits into a new line. Option order must not matter, so ids sort.
+ */
+export function makeLineKey(
+  itemId: string,
+  options: readonly SelectedOption[],
+  note: string,
+): string {
+  const ids = options
+    .map((o) => o.optionId)
+    .sort()
+    .join(",");
+  return `${itemId}|${ids}|${note.trim()}`;
+}
+
+export function cartReducer(state: CartState, action: CartAction): CartState {
+  switch (action.type) {
+    case "hydrate":
+      return action.state;
+
+    case "clear":
+      return EMPTY_CART;
+
+    case "add": {
+      const note = action.note.trim();
+      const key = makeLineKey(action.itemId, action.options, note);
+      const qty = Math.max(1, Math.floor(action.quantity));
+      const existing = state.lines.find((l) => l.key === key);
+      if (existing) {
+        return {
+          lines: state.lines.map((l) =>
+            l.key === key ? { ...l, quantity: l.quantity + qty } : l,
+          ),
+        };
+      }
+      const line: CartLine = {
+        key,
+        itemId: action.itemId,
+        itemName: action.itemName,
+        baseCents: action.baseCents,
+        unitPriceCents: resolveUnitPrice(action.baseCents, action.options),
+        quantity: qty,
+        note,
+        options: action.options,
+      };
+      return { lines: [...state.lines, line] };
+    }
+
+    case "inc":
+      return {
+        lines: state.lines.map((l) =>
+          l.key === action.key ? { ...l, quantity: l.quantity + 1 } : l,
+        ),
+      };
+
+    case "dec":
+      // Decrement, dropping the line when it would hit zero.
+      return {
+        lines: state.lines.flatMap((l) => {
+          if (l.key !== action.key) return [l];
+          return l.quantity <= 1 ? [] : [{ ...l, quantity: l.quantity - 1 }];
+        }),
+      };
+
+    case "remove":
+      return { lines: state.lines.filter((l) => l.key !== action.key) };
+  }
+}
+
+/** Ticket total in cents: sum of unit price × quantity across all lines. */
+export function cartTotalCents(state: CartState): number {
+  return state.lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
+}
+
+/** Total number of physical items (for the clear-order confirmation copy). */
+export function cartItemCount(state: CartState): number {
+  return state.lines.reduce((sum, l) => sum + l.quantity, 0);
+}
+
+// ============================================================================
+// Server-side line rebuild — the anti-tamper boundary. The client sends only
+// ids + quantity + note; the server re-prices every line from the catalog it
+// just read. Pure so it can be unit-tested without a DB.
+// ============================================================================
+
+/** Minimal catalog shape this module needs; ItemWithOptions is assignable. */
+export type CatalogOptionView = {
+  id: string;
+  name: string;
+  priceDeltaCents: number;
+  isActive: boolean;
+};
+export type CatalogGroupView = {
+  id: string;
+  name: string;
+  required: boolean;
+  options: CatalogOptionView[];
+};
+export type CatalogItemView = {
+  id: string;
+  name: string;
+  priceCents: number;
+  isActive: boolean;
+  optionGroups: CatalogGroupView[];
+};
+
+/** What the client posts per line. Prices are deliberately absent. */
+export type OrderLineInput = {
+  itemId: string;
+  optionIds: string[];
+  note: string;
+  quantity: number;
+};
+
+/** A fully-priced, snapshot-ready line the DAL inserts as an order_item. */
+export type OrderLineDraft = {
+  itemId: string;
+  itemName: string;
+  unitPriceCents: number;
+  quantity: number;
+  note: string | null;
+  options: OptionSnapshot[];
+};
+
+/**
+ * Rebuild one line from the catalog, throwing on anything the client shouldn't
+ * be able to submit (unknown/inactive item, unknown/inactive option, an option
+ * that isn't this item's, a required group left unchosen, bad quantity). The
+ * returned unit price is computed here — the client's number is never used.
+ */
+export function buildOrderLine(
+  item: CatalogItemView,
+  input: OrderLineInput,
+): OrderLineDraft {
+  if (!item.isActive) {
+    throw new Error(`Item ${item.name} is not available.`);
+  }
+  const quantity = Math.floor(input.quantity);
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    throw new Error(`Invalid quantity for ${item.name}.`);
+  }
+
+  // Index every active option of this item so we can validate the ids sent.
+  const chosen: SelectedOption[] = [];
+  const wanted = new Set(input.optionIds);
+
+  for (const group of item.optionGroups) {
+    const picks = group.options.filter(
+      (o) => wanted.has(o.id) && o.isActive,
+    );
+    if (picks.length > 1) {
+      throw new Error(`Pick only one ${group.name}.`);
+    }
+    if (picks.length === 0) {
+      if (group.required) {
+        throw new Error(`${item.name} needs a ${group.name}.`);
+      }
+      continue;
+    }
+    const pick = picks[0];
+    chosen.push({
+      groupId: group.id,
+      optionId: pick.id,
+      name: pick.name,
+      priceDeltaCents: pick.priceDeltaCents,
+    });
+  }
+
+  // Reject any submitted option id that isn't a valid active option of a group.
+  const validIds = new Set(chosen.map((c) => c.optionId));
+  for (const id of input.optionIds) {
+    if (!validIds.has(id)) {
+      throw new Error(`Unknown option for ${item.name}.`);
+    }
+  }
+
+  const note = input.note.trim();
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    unitPriceCents: resolveUnitPrice(item.priceCents, chosen),
+    quantity,
+    note: note === "" ? null : note,
+    options: chosen.map((c) => ({
+      name: c.name,
+      priceDeltaCents: c.priceDeltaCents,
+    })),
+  };
 }

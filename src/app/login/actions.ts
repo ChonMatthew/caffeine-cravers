@@ -39,5 +39,5 @@ export async function login(
     maxAge: SESSION_MAX_AGE,
   });
 
-  redirect("/"); // Phase 4 changes this to /order
+  redirect("/"); // the home hub (req #1) — not a redirect to /order
 }

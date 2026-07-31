@@ -29,6 +29,13 @@
       "when": 1785423004601,
       "tag": "0003_swift_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785501577625,
+      "tag": "0004_omniscient_power_pack",
+      "breakpoints": true
     }
   ]
 }

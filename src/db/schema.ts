@@ -4,11 +4,14 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+
+import type { OptionSnapshot } from "@/lib/order";
 
 // --- items: the menu catalog --------------------------------------------------
 export const items = pgTable(
@@ -98,8 +101,11 @@ export const orders = pgTable(
   "orders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // 'completed' | 'voided'. Voiding flips this flag — we never DELETE a sale.
-    status: text("status").notNull().default("completed"),
+    // Order lifecycle: 'unpaid' -> 'paid'. An order is persisted 'unpaid' the
+    // moment it's placed (Phase 4); Phase 4.5 takes it to 'paid'. We never
+    // DELETE a sale. ('paid' is admitted by the check now so 4.5 only adds
+    // columns, not another constraint migration.)
+    status: text("status").notNull().default("unpaid"),
     totalCents: integer("total_cents").notNull(),
     // Anti-double-charge: the client sends one key per cart; a retry with the
     // same key can't create a second order (enforced by the UNIQUE index).
@@ -110,7 +116,7 @@ export const orders = pgTable(
   },
   (t) => [
     check("orders_total_nonneg", sql`${t.totalCents} >= 0`),
-    check("orders_status_valid", sql`${t.status} in ('completed', 'voided')`),
+    check("orders_status_valid", sql`${t.status} in ('unpaid', 'paid')`),
     // Reports group by day; without this index that query table-scans.
     index("orders_created_at_idx").on(t.createdAt),
   ],
@@ -132,9 +138,29 @@ export const orderItems = pgTable(
     itemName: text("item_name").notNull(),
     unitPriceCents: integer("unit_price_cents").notNull(),
     quantity: integer("quantity").notNull(),
+    // Optional per-line note the operator typed in the add pop-up ("no sugar").
+    note: text("note"), // nullable
+    // The chosen options, snapshotted as {name, priceDeltaCents} so a reprint or
+    // report shows exactly what was sold even after the catalog is edited.
+    optionsSnapshot: jsonb("options_snapshot")
+      .$type<OptionSnapshot[]>()
+      .notNull()
+      .default([]),
   },
   (t) => [check("order_items_qty_pos", sql`${t.quantity} > 0`)],
 );
+
+// Order <-> lines wiring for nested reads (db.query.orders.findFirst({ with })).
+export const ordersRelations = relations(orders, ({ many }) => ({
+  items: many(orderItems),
+}));
+
+export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderItems.orderId],
+    references: [orders.id],
+  }),
+}));
 
 // --- Inferred types: the app imports these instead of hand-writing shapes -----
 export type Item = typeof items.$inferSelect;

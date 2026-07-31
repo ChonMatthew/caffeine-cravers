@@ -13,6 +13,9 @@ import {
 
 const initialState: ItemFormState = {};
 
+// Editing surface for one item: name, category, price. Used both as the "add"
+// form (no item) and inline on each active card (with an item). The server
+// action re-validates; price is parsed to integer cents in lib/money.
 export function ItemForm({ item }: { item?: Item }) {
   const isEdit = Boolean(item);
   const action = isEdit ? updateItemAction : createItemAction;
@@ -22,31 +25,19 @@ export function ItemForm({ item }: { item?: Item }) {
   );
 
   return (
-    <form action={formAction} className="flex flex-wrap items-start gap-2">
+    <form action={formAction} className={isEdit ? "ic-edit" : "ic-add-form"}>
       {item && <input type="hidden" name="id" value={item.id} />}
 
-      <div className="flex flex-col">
+      <div className="ic-field-wrap name">
         <input
           name="name"
           defaultValue={item?.name ?? ""}
-          placeholder="Name"
-          className="min-h-11 rounded-md border border-foreground/20 px-3"
+          placeholder="Item name"
+          maxLength={60}
+          className="field name"
         />
         {state.errors?.name && (
-          <span className="text-xs text-red-600">{state.errors.name}</span>
-        )}
-      </div>
-
-      <div className="flex flex-col">
-        <input
-          name="price"
-          defaultValue={item ? centsToInput(item.priceCents) : ""}
-          placeholder="0.00"
-          inputMode="decimal"
-          className="min-h-11 w-24 rounded-md border border-foreground/20 px-3"
-        />
-        {state.errors?.price && (
-          <span className="text-xs text-red-600">{state.errors.price}</span>
+          <span className="field-err">{state.errors.name}</span>
         )}
       </div>
 
@@ -54,19 +45,33 @@ export function ItemForm({ item }: { item?: Item }) {
         name="category"
         defaultValue={item?.category ?? ""}
         placeholder="Category"
-        className="min-h-11 w-32 rounded-md border border-foreground/20 px-3"
+        maxLength={40}
+        className="field cat"
       />
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="min-h-11 rounded-md bg-accent px-4 text-accent-foreground disabled:opacity-40"
-      >
-        {pending ? "…" : isEdit ? "Save" : "Add"}
+      <div className="ic-field-wrap">
+        <div className="ic-price">
+          <span className="ic-price-label">RM</span>
+          <input
+            name="price"
+            inputMode="decimal"
+            defaultValue={item ? centsToInput(item.priceCents) : ""}
+            placeholder="0.00"
+            className="field money"
+          />
+        </div>
+        {state.errors?.price && (
+          <span className="field-err">{state.errors.price}</span>
+        )}
+      </div>
+
+      <button type="submit" disabled={pending} className="mini primary">
+        {pending ? "…" : isEdit ? "Save" : "+ Add item"}
       </button>
 
-      {state.ok && (
-        <span className="self-center text-sm text-green-600">Saved</span>
+      {state.ok && <span className="field-ok">Saved</span>}
+      {state.errors?.form && (
+        <span className="field-err">{state.errors.form}</span>
       )}
     </form>
   );

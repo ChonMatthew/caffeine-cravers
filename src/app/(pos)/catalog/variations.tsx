@@ -1,5 +1,5 @@
 import type { ItemWithOptions } from "@/db/schema";
-import { formatCents } from "@/lib/money";
+import { centsToInput } from "@/lib/money";
 
 import {
   addGroupAction,
@@ -9,116 +9,103 @@ import {
   toggleOptionActiveAction,
 } from "./actions";
 
-// Server component: renders an item's option groups + options and the plain
-// form actions to manage them. No client state — every button is a tiny POST
-// that revalidates /catalog.
+// "+2.00" / "-1.00" — the option price delta, mono, in the design's compact form.
+function deltaLabel(cents: number): string {
+  return `${cents < 0 ? "−" : "+"}${centsToInput(Math.abs(cents))}`;
+}
+
+// Server component: an item's option groups + options, plus the plain form
+// actions to manage them. No client state — every control is a tiny POST that
+// revalidates /catalog. Touch targets are 44px (was the compact-link tech debt).
 export function Variations({ item }: { item: ItemWithOptions }) {
   return (
-    <div className="mt-2 w-full border-t border-foreground/10 pt-2">
-      <p className="mb-2 text-xs font-medium text-foreground/50">Variations</p>
+    <div className="ic-vars">
+      <div className="ic-vars-lbl">Variations</div>
 
-      <div className="flex flex-col gap-3">
-        {item.optionGroups.map((group) => (
-          <div
-            key={group.id}
-            className="rounded-md border border-foreground/10 p-2"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{group.name}</span>
-              {group.required && (
-                <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] uppercase text-foreground/60">
-                  required
-                </span>
-              )}
-              <form action={removeGroupAction} className="ml-auto">
-                <input type="hidden" name="groupId" value={group.id} />
-                <button className="text-xs text-red-600 underline">
-                  Remove group
-                </button>
-              </form>
-            </div>
+      {item.optionGroups.length === 0 && (
+        <p className="novar">No variations yet.</p>
+      )}
 
-            <ul className="mt-2 flex flex-col gap-1">
-              {group.options.map((opt) => (
-                <li
-                  key={opt.id}
-                  className={`flex items-center gap-2 text-sm ${
-                    opt.isActive ? "" : "opacity-50"
-                  }`}
-                >
-                  <span>{opt.name}</span>
-                  <span className="text-foreground/50">
-                    +{formatCents(opt.priceDeltaCents)}
-                  </span>
-                  <form action={toggleOptionActiveAction} className="ml-auto">
-                    <input type="hidden" name="optionId" value={opt.id} />
-                    <input
-                      type="hidden"
-                      name="active"
-                      value={opt.isActive ? "false" : "true"}
-                    />
-                    <button className="text-xs text-foreground/60 underline">
-                      {opt.isActive ? "Hide" : "Show"}
-                    </button>
-                  </form>
-                  <form action={removeOptionAction}>
-                    <input type="hidden" name="optionId" value={opt.id} />
-                    <button className="text-xs text-red-600 underline">
-                      Remove
-                    </button>
-                  </form>
-                </li>
-              ))}
-              {group.options.length === 0 && (
-                <li className="text-xs text-foreground/40">No options yet.</li>
-              )}
-            </ul>
+      {item.optionGroups.map((group) => (
+        <div className="cgrp" key={group.id}>
+          <div className="cgrp-lbl">
+            {group.name}
+            {group.required && <span className="req">REQ</span>}
+          </div>
 
-            <form
-              action={addOptionAction}
-              className="mt-2 flex flex-wrap items-center gap-2"
-            >
+          <div className="opts">
+            {group.options.map((opt) => (
+              <span
+                key={opt.id}
+                className={`opt${opt.isActive ? "" : " hidden-opt"}`}
+              >
+                {opt.name}
+                <span className="dp">{deltaLabel(opt.priceDeltaCents)}</span>
+                <form action={toggleOptionActiveAction}>
+                  <input type="hidden" name="optionId" value={opt.id} />
+                  <input
+                    type="hidden"
+                    name="active"
+                    value={opt.isActive ? "false" : "true"}
+                  />
+                  <button
+                    className="toggle"
+                    title={opt.isActive ? "Hide from order screen" : "Show"}
+                  >
+                    {opt.isActive ? "Hide" : "Show"}
+                  </button>
+                </form>
+                <form action={removeOptionAction}>
+                  <input type="hidden" name="optionId" value={opt.id} />
+                  <button className="x" title="Remove option" aria-label="Remove option">
+                    ×
+                  </button>
+                </form>
+              </span>
+            ))}
+
+            {/* inline add-option */}
+            <form action={addOptionAction} className="opt-add">
               <input type="hidden" name="groupId" value={group.id} />
               <input
                 name="name"
                 required
                 maxLength={40}
-                placeholder="Option (e.g. Large)"
-                className="min-h-9 rounded-md border border-foreground/20 px-2 text-sm"
+                placeholder="Option"
+                className="field sm"
+                style={{ width: 120 }}
               />
               <input
                 name="price"
                 inputMode="decimal"
                 placeholder="+0.00"
-                className="min-h-9 w-20 rounded-md border border-foreground/20 px-2 text-sm"
+                className="field sm money"
               />
-              <button className="min-h-9 rounded-md border border-foreground/20 px-3 text-sm">
-                Add option
-              </button>
+              <button className="dashbtn">+ option</button>
             </form>
           </div>
-        ))}
-      </div>
 
-      <form
-        action={addGroupAction}
-        className="mt-3 flex flex-wrap items-center gap-2"
-      >
+          <form action={removeGroupAction}>
+            <input type="hidden" name="groupId" value={group.id} />
+            <button className="mini danger">Remove {group.name}</button>
+          </form>
+        </div>
+      ))}
+
+      {/* add a new group */}
+      <form action={addGroupAction} className="grp-add">
         <input type="hidden" name="itemId" value={item.id} />
         <input
           name="name"
           required
           maxLength={40}
           placeholder="New group (e.g. Size)"
-          className="min-h-9 rounded-md border border-foreground/20 px-2 text-sm"
+          className="field sm"
         />
-        <label className="flex items-center gap-1 text-xs text-foreground/60">
-          <input type="checkbox" name="required" defaultChecked />
-          required
+        <label className="checkbox-lbl">
+          <input type="checkbox" name="required" defaultChecked /> required
         </label>
-        <button className="min-h-9 rounded-md border border-foreground/20 px-3 text-sm">
-          Add group
-        </button>
+        <button className="dashbtn">+ Add group</button>
       </form>
     </div>
   );

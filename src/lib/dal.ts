@@ -1,6 +1,6 @@
 import "server-only"; // never bundle the data layer into client code
 
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
@@ -9,10 +9,18 @@ import {
   items,
   optionGroups,
   options,
+  orderItems,
+  orders,
   type Item,
   type ItemWithOptions,
+  type Order,
+  type OrderItem,
 } from "@/db/schema";
+import type { OrderLineDraft } from "@/lib/order";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+
+// The stall reconciles cash by LOCAL day, never UTC (CLAUDE.md pinned fact).
+const STALL_TIMEZONE = "Asia/Kuala_Lumpur";
 
 // The real auth boundary. proxy.ts only redirects browsers; Server Actions are
 // POST endpoints anyone can hit directly, so enforcement lives here. cache()
@@ -124,4 +132,113 @@ export async function setOptionActive(
 ): Promise<void> {
   await requireSession();
   await db.update(options).set({ isActive: active }).where(eq(options.id, id));
+}
+
+// --- order flow (Phase 4) ----------------------------------------------------
+
+/**
+ * The order screen's read: active items only, each with its option groups and
+ * only their ACTIVE options, ordered for display. One round-trip.
+ */
+export async function getActiveItemsWithOptions(): Promise<ItemWithOptions[]> {
+  await requireSession();
+  return db.query.items.findMany({
+    where: (i, { eq }) => eq(i.isActive, true),
+    orderBy: (i, { asc }) => asc(i.name),
+    with: {
+      optionGroups: {
+        orderBy: (g, { asc }) => [asc(g.sortOrder), asc(g.name)],
+        with: {
+          options: {
+            where: (o, { eq }) => eq(o.isActive, true),
+            orderBy: (o, { asc }) => [asc(o.sortOrder), asc(o.name)],
+          },
+        },
+      },
+    },
+  });
+}
+
+export type CreateOrderInput = {
+  idempotencyKey: string;
+  totalCents: number;
+  lines: OrderLineDraft[];
+};
+
+/**
+ * Persist an unpaid order and its lines in one transaction. The idempotency key
+ * is the anti-double-charge guard: a retry with the same key inserts nothing
+ * and returns the order that already exists. Returns the order id either way.
+ */
+export async function createOrder(
+  input: CreateOrderInput,
+): Promise<{ id: string; created: boolean }> {
+  await requireSession();
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(orders)
+      .values({
+        status: "unpaid",
+        totalCents: input.totalCents,
+        idempotencyKey: input.idempotencyKey,
+      })
+      .onConflictDoNothing({ target: orders.idempotencyKey })
+      .returning({ id: orders.id });
+
+    // Conflict: this key already produced an order. Don't insert lines again.
+    if (inserted.length === 0) {
+      const existing = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(eq(orders.idempotencyKey, input.idempotencyKey));
+      return { id: existing[0].id, created: false };
+    }
+
+    const orderId = inserted[0].id;
+    await tx.insert(orderItems).values(
+      input.lines.map((l) => ({
+        orderId,
+        itemId: l.itemId,
+        itemName: l.itemName,
+        unitPriceCents: l.unitPriceCents,
+        quantity: l.quantity,
+        note: l.note,
+        optionsSnapshot: l.options,
+      })),
+    );
+    return { id: orderId, created: true };
+  });
+}
+
+/** An order with its lines — for the placed / detail screen. */
+export async function getOrderById(
+  id: string,
+): Promise<(Order & { items: OrderItem[] }) | null> {
+  await requireSession();
+  const row = await db.query.orders.findFirst({
+    where: (o, { eq }) => eq(o.id, id),
+    with: { items: true },
+  });
+  return row ?? null;
+}
+
+/**
+ * Today's takings for the home day-strip, bucketed by the stall's LOCAL day
+ * (not UTC). Counts every order placed today; the money total is what has
+ * actually been paid so far.
+ */
+export async function getTodaySummary(): Promise<{
+  orderCount: number;
+  paidCents: number;
+}> {
+  await requireSession();
+  const localToday = sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = (now() AT TIME ZONE ${STALL_TIMEZONE})::date`;
+  const rows = await db
+    .select({
+      orderCount: sql<number>`count(*)::int`,
+      paidCents: sql<number>`coalesce(sum(${orders.totalCents}) filter (where ${orders.status} = 'paid'), 0)::int`,
+    })
+    .from(orders)
+    .where(localToday);
+  return rows[0] ?? { orderCount: 0, paidCents: 0 };
 }
