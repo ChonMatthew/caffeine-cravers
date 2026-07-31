@@ -1,6 +1,6 @@
 import "server-only"; // never bundle the data layer into client code
 
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
@@ -208,6 +208,29 @@ export async function createOrder(
     );
     return { id: orderId, created: true };
   });
+}
+
+/**
+ * Take an unpaid order to paid, in one conditional UPDATE. The `status = unpaid`
+ * guard makes it safe against a double-pay / race: a second call updates zero
+ * rows and returns null. Change is computed by the caller (server-side).
+ */
+export async function markOrderPaid(
+  id: string,
+  data: { tenderedCents: number; changeCents: number },
+): Promise<{ id: string } | null> {
+  await requireSession();
+  const rows = await db
+    .update(orders)
+    .set({
+      status: "paid",
+      cashTenderedCents: data.tenderedCents,
+      changeCents: data.changeCents,
+      paidAt: new Date(),
+    })
+    .where(and(eq(orders.id, id), eq(orders.status, "unpaid")))
+    .returning({ id: orders.id });
+  return rows[0] ?? null;
 }
 
 /** An order with its lines — for the placed / detail screen. */

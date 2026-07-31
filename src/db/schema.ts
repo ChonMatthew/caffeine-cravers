@@ -107,6 +107,11 @@ export const orders = pgTable(
     // columns, not another constraint migration.)
     status: text("status").notNull().default("unpaid"),
     totalCents: integer("total_cents").notNull(),
+    // Payment (Phase 4.5). Null until the order is paid. Cash only — the amount
+    // handed over and the change given back, both recomputed server-side.
+    cashTenderedCents: integer("cash_tendered_cents"), // nullable
+    changeCents: integer("change_cents"), // nullable
+    paidAt: timestamp("paid_at", { withTimezone: true }), // nullable
     // Anti-double-charge: the client sends one key per cart; a retry with the
     // same key can't create a second order (enforced by the UNIQUE index).
     idempotencyKey: uuid("idempotency_key").notNull().unique(),
@@ -117,6 +122,14 @@ export const orders = pgTable(
   (t) => [
     check("orders_total_nonneg", sql`${t.totalCents} >= 0`),
     check("orders_status_valid", sql`${t.status} in ('unpaid', 'paid')`),
+    check(
+      "orders_tendered_nonneg",
+      sql`${t.cashTenderedCents} is null or ${t.cashTenderedCents} >= 0`,
+    ),
+    check(
+      "orders_change_nonneg",
+      sql`${t.changeCents} is null or ${t.changeCents} >= 0`,
+    ),
     // Reports group by day; without this index that query table-scans.
     index("orders_created_at_idx").on(t.createdAt),
   ],

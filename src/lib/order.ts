@@ -158,6 +158,24 @@ export function cartItemCount(state: CartState): number {
   return state.lines.reduce((sum, l) => sum + l.quantity, 0);
 }
 
+/**
+ * Change due for a cash payment, in cents. Pure + server-authoritative: the
+ * amount tendered comes from the client, but the change is computed here and
+ * the tender is rejected if it's below the total or not a sane integer.
+ */
+export function computeChangeCents(
+  totalCents: number,
+  tenderedCents: number,
+): number {
+  if (!Number.isInteger(tenderedCents) || tenderedCents < 0) {
+    throw new Error("Enter a valid cash amount.");
+  }
+  if (tenderedCents < totalCents) {
+    throw new Error("Amount tendered is less than the total.");
+  }
+  return tenderedCents - totalCents;
+}
+
 // ============================================================================
 // Server-side line rebuild — the anti-tamper boundary. The client sends only
 // ids + quantity + note; the server re-prices every line from the catalog it

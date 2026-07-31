@@ -5,6 +5,7 @@ import {
   cartItemCount,
   cartReducer,
   cartTotalCents,
+  computeChangeCents,
   makeLineKey,
   resolveUnitPrice,
   type CartState,
@@ -146,6 +147,25 @@ describe("cartReducer", () => {
     s = cartReducer(s, addAction({ options: [], note: "plain", quantity: 1 })); // 800
     expect(cartTotalCents(s)).toBe(2200 + 800);
     expect(cartItemCount(s)).toBe(3);
+  });
+});
+
+describe("computeChangeCents", () => {
+  it("returns change when tendered exceeds the total (RM20 for RM11 = RM9)", () => {
+    expect(computeChangeCents(1100, 2000)).toBe(900);
+  });
+
+  it("returns zero change on an exact tender", () => {
+    expect(computeChangeCents(1100, 1100)).toBe(0);
+  });
+
+  it("rejects a tender below the total", () => {
+    expect(() => computeChangeCents(1100, 1000)).toThrow(/less than the total/);
+  });
+
+  it("rejects a non-integer or negative tender", () => {
+    expect(() => computeChangeCents(1100, 11.5)).toThrow(/valid cash amount/);
+    expect(() => computeChangeCents(1100, -1)).toThrow(/valid cash amount/);
   });
 });
 

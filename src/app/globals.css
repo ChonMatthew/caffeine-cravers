@@ -999,6 +999,86 @@ a,
   margin-top: 12px;
 }
 
+/* ---- payment (cash keypad) ---- */
+.paygrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.pay-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.due {
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.due .lab {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+.due .val {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.due.total .val {
+  color: var(--marigold);
+}
+.due.change .val {
+  color: var(--jade);
+}
+.quick {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.quick button {
+  flex: 1;
+  min-width: 66px;
+  min-height: 46px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+.keypad button {
+  min-height: 58px;
+  font-family: var(--font-mono);
+  font-size: 21px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--key-lip);
+}
+.keypad button:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+@media (max-width: 640px) {
+  .paygrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ===== confirm (clear-order guardrail) ===================================== */
 .confirm {
   width: min(420px, 100%);

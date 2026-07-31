@@ -3,9 +3,16 @@
 import {
   createOrder,
   getActiveItemsWithOptions,
+  getOrderById,
+  markOrderPaid,
   requireSession,
 } from "@/lib/dal";
-import { buildOrderLine, type OrderLineDraft, type OrderLineInput } from "@/lib/order";
+import {
+  buildOrderLine,
+  computeChangeCents,
+  type OrderLineDraft,
+  type OrderLineInput,
+} from "@/lib/order";
 
 export type PlaceOrderResult =
   | { ok: true; orderId: string }
@@ -56,6 +63,40 @@ export async function placeOrder(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Could not place the order.",
+    };
+  }
+}
+
+export type PayOrderResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Take an unpaid order to paid (Phase 4.5). The client sends only the cash
+ * tendered; the change is recomputed here from the order's stored total and the
+ * tender is rejected if it's short. Idempotent: paying an already-paid order is
+ * a no-op success (a double-tap can't double-charge).
+ */
+export async function payOrder(input: {
+  orderId: string;
+  tenderedCents: number;
+}): Promise<PayOrderResult> {
+  await requireSession();
+
+  const order = await getOrderById(input.orderId);
+  if (!order) return { ok: false, error: "Order not found." };
+  if (order.status === "paid") return { ok: true }; // already settled
+
+  try {
+    const changeCents = computeChangeCents(order.totalCents, input.tenderedCents);
+    const paid = await markOrderPaid(order.id, {
+      tenderedCents: input.tenderedCents,
+      changeCents,
+    });
+    if (!paid) return { ok: false, error: "Order was already paid." };
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Payment failed.",
     };
   }
 }
