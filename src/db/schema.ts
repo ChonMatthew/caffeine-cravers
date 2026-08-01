@@ -101,6 +101,12 @@ export const orders = pgTable(
   "orders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Human-facing RECORD NUMBER, assigned by Postgres at insert. Monotonic,
+    // never reused (gaps are fine) — the running count of orders ever placed.
+    // The operator-facing per-DAY number ("Order 12 today") is DERIVED at read
+    // time from this + the local day, never stored. GENERATED ALWAYS = the app
+    // never sets it, so it can't collide with the idempotency-retry path.
+    orderSeq: integer("order_seq").generatedAlwaysAsIdentity(),
     // Order lifecycle: 'unpaid' -> 'paid'. An order is persisted 'unpaid' the
     // moment it's placed (Phase 4); Phase 4.5 takes it to 'paid'. We never
     // DELETE a sale. ('paid' is admitted by the check now so 4.5 only adds
@@ -112,6 +118,9 @@ export const orders = pgTable(
     cashTenderedCents: integer("cash_tendered_cents"), // nullable
     changeCents: integer("change_cents"), // nullable
     paidAt: timestamp("paid_at", { withTimezone: true }), // nullable
+    // Fulfilment: NULL = Takeaway. Non-null = Dine-in ("" = dine-in with no table
+    // given, otherwise the table number/label the operator typed).
+    tableLabel: text("table_label"), // nullable
     // Anti-double-charge: the client sends one key per cart; a retry with the
     // same key can't create a second order (enforced by the UNIQUE index).
     idempotencyKey: uuid("idempotency_key").notNull().unique(),

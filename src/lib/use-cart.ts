@@ -44,7 +44,14 @@ export function useCart() {
       const raw = localStorage.getItem(STORAGE_KEY);
       const parsed = raw ? (JSON.parse(raw) as Partial<Persisted>) : null;
       if (parsed?.state?.lines) {
-        dispatch({ type: "hydrate", state: parsed.state });
+        dispatch({
+          type: "hydrate",
+          // tableLabel may be absent in a cart saved before this field existed.
+          state: {
+            lines: parsed.state.lines,
+            tableLabel: parsed.state.tableLabel ?? null,
+          },
+        });
       }
       keyRef.current = parsed?.key || crypto.randomUUID();
     } catch {
@@ -77,6 +84,10 @@ export function useCart() {
     [],
   );
   const clear = useCallback(() => dispatch({ type: "clear" }), []);
+  const setTable = useCallback(
+    (tableLabel: string | null) => dispatch({ type: "setTable", tableLabel }),
+    [],
+  );
 
   // The idempotency key for the current cart, read only when Place Order fires
   // (in a callback, never during render). Lazily minted as a safety net.
@@ -95,6 +106,7 @@ export function useCart() {
   return {
     lines: state.lines,
     state,
+    tableLabel: state.tableLabel,
     total: cartTotalCents(state),
     count: cartItemCount(state),
     getIdempotencyKey,
@@ -103,6 +115,7 @@ export function useCart() {
     dec,
     remove,
     clear,
+    setTable,
     resetAfterPlace,
   };
 }

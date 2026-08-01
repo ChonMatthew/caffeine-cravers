@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { getOrderById } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
+import { formatFulfilment } from "@/lib/order";
 
 // Order detail — the Placed (unpaid) state or the Paid state, chosen by status.
 // Next 16: `params` is a Promise. Print buttons are Phase-5 stubs (the app-bar
@@ -16,7 +17,6 @@ export default async function OrderDetailPage({
   const order = await getOrderById(id);
   if (!order) notFound();
 
-  const ref = `#${id.slice(0, 8)}`;
   const paid = order.status === "paid";
 
   return (
@@ -26,8 +26,12 @@ export default async function OrderDetailPage({
           ✓
         </div>
         <h2>{paid ? "Paid" : "Order Placed"}</h2>
+        <div className="ordernum">
+          Order #{order.dailyNumber}
+          <span className="rec">record #{order.orderSeq}</span>
+        </div>
         <div className="sub">
-          Ticket {ref} · {paid ? "complete" : "saved · unpaid"}
+          {formatFulfilment(order.tableLabel)} · {paid ? "Complete" : "Saved · unpaid"}
         </div>
 
         {paid ? (

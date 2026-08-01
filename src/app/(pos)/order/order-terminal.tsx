@@ -83,7 +83,11 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
     }));
     setPlaceError(null);
     startPlacing(async () => {
-      const res = await placeOrder({ idempotencyKey: key, lines });
+      const res = await placeOrder({
+        idempotencyKey: key,
+        tableLabel: cart.tableLabel,
+        lines,
+      });
       if (res.ok) {
         cart.resetAfterPlace();
         router.push(`/order/${res.orderId}`);
@@ -161,6 +165,33 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
           </button>
         </div>
 
+        <div className="dine">
+          <div className="dine-toggle" role="group" aria-label="Fulfilment">
+            <button
+              className={cart.tableLabel === null ? "on" : ""}
+              onClick={() => cart.setTable(null)}
+            >
+              Takeaway
+            </button>
+            <button
+              className={cart.tableLabel !== null ? "on" : ""}
+              onClick={() => cart.setTable(cart.tableLabel ?? "")}
+            >
+              Dine-in
+            </button>
+          </div>
+          {cart.tableLabel !== null && (
+            <input
+              className="dine-table"
+              placeholder="Table no."
+              value={cart.tableLabel}
+              maxLength={12}
+              aria-label="Table number"
+              onChange={(e) => cart.setTable(e.target.value)}
+            />
+          )}
+        </div>
+
         <div className="lines">
           {cart.lines.length === 0 ? (
             <div className="empty">
@@ -173,30 +204,34 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
               const vr = l.options.map((o) => o.name).join(" · ");
               return (
                 <div className="line" key={l.key}>
-                  <div className="info">
-                    <div className="nm">{l.itemName}</div>
-                    {vr && <div className="vr">{vr}</div>}
-                    {l.note && <div className="note">“{l.note}”</div>}
-                  </div>
-                  <div className="step">
-                    <button aria-label="One less" onClick={() => cart.dec(l.key)}>
-                      −
+                  <div className="line-top">
+                    <div className="info">
+                      <div className="nm">{l.itemName}</div>
+                      {vr && <div className="vr">{vr}</div>}
+                      {l.note && <div className="note">“{l.note}”</div>}
+                    </div>
+                    <button
+                      className="rm"
+                      aria-label={`Remove ${l.itemName}`}
+                      onClick={() => cart.remove(l.key)}
+                    >
+                      ×
                     </button>
-                    <span className="n">{l.quantity}</span>
-                    <button aria-label="One more" onClick={() => cart.inc(l.key)}>
-                      +
-                    </button>
                   </div>
-                  <div className="lt">
-                    {formatCents(l.unitPriceCents * l.quantity)}
+                  <div className="line-bottom">
+                    <div className="step">
+                      <button aria-label="One less" onClick={() => cart.dec(l.key)}>
+                        −
+                      </button>
+                      <span className="n">{l.quantity}</span>
+                      <button aria-label="One more" onClick={() => cart.inc(l.key)}>
+                        +
+                      </button>
+                    </div>
+                    <div className="lt">
+                      {formatCents(l.unitPriceCents * l.quantity)}
+                    </div>
                   </div>
-                  <button
-                    className="rm"
-                    aria-label={`Remove ${l.itemName}`}
-                    onClick={() => cart.remove(l.key)}
-                  >
-                    ×
-                  </button>
                 </div>
               );
             })

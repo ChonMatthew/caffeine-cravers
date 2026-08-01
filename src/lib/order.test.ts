@@ -6,12 +6,23 @@ import {
   cartReducer,
   cartTotalCents,
   computeChangeCents,
+  formatFulfilment,
   makeLineKey,
   resolveUnitPrice,
   type CartState,
   type CatalogItemView,
   type SelectedOption,
 } from "./order";
+
+describe("formatFulfilment", () => {
+  it("labels null as Takeaway, empty as Dine-in, and a value as Table N", () => {
+    expect(formatFulfilment(null)).toBe("Takeaway");
+    expect(formatFulfilment("")).toBe("Dine-in");
+    expect(formatFulfilment("  ")).toBe("Dine-in");
+    expect(formatFulfilment("5")).toBe("Table 5");
+    expect(formatFulfilment(" A2 ")).toBe("Table A2");
+  });
+});
 
 // Small helper so the cases below read as "just the deltas that matter".
 function opt(priceDeltaCents: number): SelectedOption {
@@ -94,7 +105,7 @@ function addAction(
 }
 
 describe("cartReducer", () => {
-  const empty: CartState = { lines: [] };
+  const empty: CartState = { lines: [], tableLabel: null };
 
   it("adds a priced line (base + deltas)", () => {
     const s = cartReducer(empty, addAction());
@@ -139,6 +150,16 @@ describe("cartReducer", () => {
     s = cartReducer(s, { type: "remove", key });
     expect(s.lines).toHaveLength(1);
     s = cartReducer(s, { type: "clear" });
+    expect(s.lines).toHaveLength(0);
+  });
+
+  it("carries the fulfilment (tableLabel) through line edits, resets on clear", () => {
+    let s = cartReducer(empty, { type: "setTable", tableLabel: "5" });
+    expect(s.tableLabel).toBe("5");
+    s = cartReducer(s, addAction()); // adding an item keeps the table
+    expect(s.tableLabel).toBe("5");
+    s = cartReducer(s, { type: "clear" }); // clear resets to takeaway
+    expect(s.tableLabel).toBeNull();
     expect(s.lines).toHaveLength(0);
   });
 

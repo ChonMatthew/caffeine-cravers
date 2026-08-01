@@ -28,12 +28,17 @@ export type PlaceOrderResult =
  */
 export async function placeOrder(input: {
   idempotencyKey: string;
+  tableLabel: string | null;
   lines: OrderLineInput[];
 }): Promise<PlaceOrderResult> {
   await requireSession();
 
   if (!input.idempotencyKey) return { ok: false, error: "Missing order key." };
   if (!input.lines?.length) return { ok: false, error: "The ticket is empty." };
+
+  // null = Takeaway; a string (possibly "") = Dine-in, trimmed.
+  const tableLabel =
+    input.tableLabel === null ? null : input.tableLabel.trim();
 
   try {
     const catalog = await getActiveItemsWithOptions();
@@ -56,6 +61,7 @@ export async function placeOrder(input: {
     const { id } = await createOrder({
       idempotencyKey: input.idempotencyKey,
       totalCents,
+      tableLabel,
       lines: drafts,
     });
     return { ok: true, orderId: id };

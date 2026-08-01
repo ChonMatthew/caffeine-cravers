@@ -1,6 +1,6 @@
 import "server-only"; // never bundle the data layer into client code
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
@@ -162,6 +162,7 @@ export async function getActiveItemsWithOptions(): Promise<ItemWithOptions[]> {
 export type CreateOrderInput = {
   idempotencyKey: string;
   totalCents: number;
+  tableLabel: string | null;
   lines: OrderLineDraft[];
 };
 
@@ -180,6 +181,7 @@ export async function createOrder(
       .values({
         status: "unpaid",
         totalCents: input.totalCents,
+        tableLabel: input.tableLabel,
         idempotencyKey: input.idempotencyKey,
       })
       .onConflictDoNothing({ target: orders.idempotencyKey })
@@ -233,16 +235,71 @@ export async function markOrderPaid(
   return rows[0] ?? null;
 }
 
-/** An order with its lines — for the placed / detail screen. */
+/** An order with its lines + its per-day number — for the placed/detail screen. */
+export type OrderWithItems = Order & {
+  items: OrderItem[];
+  /** 1-based position among orders on the same LOCAL day ("Order 12 today"). */
+  dailyNumber: number;
+};
+
 export async function getOrderById(
   id: string,
-): Promise<(Order & { items: OrderItem[] }) | null> {
+): Promise<OrderWithItems | null> {
   await requireSession();
   const row = await db.query.orders.findFirst({
     where: (o, { eq }) => eq(o.id, id),
     with: { items: true },
   });
-  return row ?? null;
+  if (!row) return null;
+
+  // Daily number = how many orders on this order's local day have an order_seq
+  // at or below this one. Stable (later orders never change it) and resets each
+  // day for free, without a stored counter.
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(orders)
+    .where(
+      and(
+        sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = (${row.createdAt.toISOString()}::timestamptz AT TIME ZONE ${STALL_TIMEZONE})::date`,
+        sql`${orders.orderSeq} <= ${row.orderSeq}`,
+      ),
+    );
+  return { ...row, dailyNumber: n };
+}
+
+/** One row on the Incomplete Orders page — an unpaid order to resume/settle. */
+export type UnpaidOrderRow = {
+  id: string;
+  orderSeq: number;
+  dailyNumber: number;
+  tableLabel: string | null;
+  totalCents: number;
+  createdAt: Date;
+};
+
+/**
+ * Every unpaid order (the "incomplete" queue), newest first, each with its
+ * per-day number computed inline (count of same-local-day orders up to it).
+ */
+export async function getUnpaidOrders(): Promise<UnpaidOrderRow[]> {
+  await requireSession();
+  return db
+    .select({
+      id: orders.id,
+      orderSeq: orders.orderSeq,
+      tableLabel: orders.tableLabel,
+      totalCents: orders.totalCents,
+      createdAt: orders.createdAt,
+      dailyNumber: sql<number>`(
+        select count(*)::int from orders o2
+        where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+            = (${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date
+          and o2.order_seq <= ${orders.orderSeq}
+      )`,
+    })
+    .from(orders)
+    .where(eq(orders.status, "unpaid"))
+    .orderBy(desc(orders.createdAt));
 }
 
 /**

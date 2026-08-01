@@ -18,6 +18,7 @@ import { PrinterChip } from "./printer-chip";
 const NAV = [
   { href: "/", label: "Home" },
   { href: "/order", label: "Order" },
+  { href: "/incomplete", label: "Incomplete" },
   { href: "/catalog", label: "Catalog" },
   { href: "/reports", label: "Report" },
 ] as const;

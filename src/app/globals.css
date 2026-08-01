@@ -534,6 +534,55 @@ a,
   opacity: 0.35;
   cursor: default;
 }
+/* fulfilment: takeaway (default) / dine-in + table number */
+.dine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 12px;
+  border-bottom: 1px solid var(--hairline);
+  flex-wrap: wrap;
+}
+.dine-toggle {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.dine-toggle button {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  background: transparent;
+  border: none;
+  padding: 9px 16px;
+  min-height: 42px;
+  cursor: pointer;
+}
+.dine-toggle button.on {
+  background: var(--jade);
+  color: #08110e;
+}
+.dine-table {
+  flex: 1;
+  min-width: 90px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  padding: 9px 12px;
+  min-height: 42px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+}
+.dine-table::placeholder {
+  color: var(--ink-faint);
+}
+
 .lines {
   flex: 1;
   min-height: 0;
@@ -548,12 +597,23 @@ a,
   line-height: 1.6;
 }
 .line {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 12px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 12px 16px 12px 18px;
   border-bottom: 1px solid rgba(56, 43, 34, 0.5);
+}
+.line-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.line-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .line .nm {
   font-weight: 600;
@@ -573,21 +633,18 @@ a,
 .line .lt {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 15px;
+  font-size: 16px;
   text-align: right;
-  min-width: 64px;
 }
 .line .rm {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
+  flex: none;
   color: var(--ink-faint);
   background: transparent;
   border: none;
-  font-size: 16px;
+  font-size: 18px;
+  line-height: 1;
   cursor: pointer;
-  padding: 2px 6px;
-  margin-top: -2px;
+  padding: 0 4px;
 }
 .line .rm:hover {
   color: var(--brick);
@@ -908,6 +965,28 @@ a,
   color: var(--ink-dim);
   font-size: 14px;
   margin-bottom: 18px;
+}
+/* the called-out per-day order number */
+.ordernum {
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: 30px;
+  color: var(--marigold);
+  margin: 2px 0 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.ordernum .rec {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
 }
 .sumrow {
   display: flex;
@@ -1452,6 +1531,70 @@ a,
   font-family: var(--font-mono);
   color: var(--ink-dim);
   font-size: 14px;
+}
+
+/* ===== INCOMPLETE ORDERS =================================================== */
+.incomplete {
+  padding: 22px 26px 40px;
+}
+.inc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inc-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 16px 18px;
+  text-decoration: none;
+  color: var(--ink);
+  box-shadow: 0 2px 0 var(--key-lip);
+  min-height: 60px;
+}
+.inc-row:hover {
+  background: var(--surface-2);
+}
+.inc-num {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--marigold);
+  min-width: 56px;
+}
+.inc-fulfil {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--ink-dim);
+  min-width: 92px;
+}
+.inc-time {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+.inc-total {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+}
+.inc-go {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--jade);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .inc-go {
+    display: none;
+  }
 }
 
 /* ===== reports placeholder ================================================= */

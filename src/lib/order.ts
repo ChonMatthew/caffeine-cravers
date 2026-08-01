@@ -57,9 +57,13 @@ export type CartLine = {
   options: SelectedOption[];
 };
 
-export type CartState = { lines: CartLine[] };
+export type CartState = {
+  lines: CartLine[];
+  /** Fulfilment: null = Takeaway, else Dine-in ("" = no table given, or a label). */
+  tableLabel: string | null;
+};
 
-export const EMPTY_CART: CartState = { lines: [] };
+export const EMPTY_CART: CartState = { lines: [], tableLabel: null };
 
 export type CartAction =
   | {
@@ -74,6 +78,7 @@ export type CartAction =
   | { type: "inc"; key: string }
   | { type: "dec"; key: string }
   | { type: "remove"; key: string }
+  | { type: "setTable"; tableLabel: string | null }
   | { type: "clear" }
   | { type: "hydrate"; state: CartState };
 
@@ -102,6 +107,9 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case "clear":
       return EMPTY_CART;
 
+    case "setTable":
+      return { ...state, tableLabel: action.tableLabel };
+
     case "add": {
       const note = action.note.trim();
       const key = makeLineKey(action.itemId, action.options, note);
@@ -109,6 +117,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       const existing = state.lines.find((l) => l.key === key);
       if (existing) {
         return {
+          ...state,
           lines: state.lines.map((l) =>
             l.key === key ? { ...l, quantity: l.quantity + qty } : l,
           ),
@@ -124,11 +133,12 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
         note,
         options: action.options,
       };
-      return { lines: [...state.lines, line] };
+      return { ...state, lines: [...state.lines, line] };
     }
 
     case "inc":
       return {
+        ...state,
         lines: state.lines.map((l) =>
           l.key === action.key ? { ...l, quantity: l.quantity + 1 } : l,
         ),
@@ -137,6 +147,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
     case "dec":
       // Decrement, dropping the line when it would hit zero.
       return {
+        ...state,
         lines: state.lines.flatMap((l) => {
           if (l.key !== action.key) return [l];
           return l.quantity <= 1 ? [] : [{ ...l, quantity: l.quantity - 1 }];
@@ -144,7 +155,7 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       };
 
     case "remove":
-      return { lines: state.lines.filter((l) => l.key !== action.key) };
+      return { ...state, lines: state.lines.filter((l) => l.key !== action.key) };
   }
 }
 
@@ -174,6 +185,16 @@ export function computeChangeCents(
     throw new Error("Amount tendered is less than the total.");
   }
   return tenderedCents - totalCents;
+}
+
+/**
+ * Human label for an order's fulfilment. null = Takeaway; "" = Dine-in with no
+ * table given; any other string = that table ("Table 5").
+ */
+export function formatFulfilment(tableLabel: string | null): string {
+  if (tableLabel === null) return "Takeaway";
+  const t = tableLabel.trim();
+  return t === "" ? "Dine-in" : `Table ${t}`;
 }
 
 // ============================================================================

@@ -43,6 +43,20 @@
       "when": 1785504787567,
       "tag": "0005_lush_steel_serpent",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785570554973,
+      "tag": "0006_ambitious_mongu",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785571973880,
+      "tag": "0007_aromatic_sunset_bain",
+      "breakpoints": true
     }
   ]
 }
