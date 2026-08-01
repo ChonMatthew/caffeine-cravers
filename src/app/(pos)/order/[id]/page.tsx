@@ -1,13 +1,26 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getOrderById } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
 import { formatFulfilment } from "@/lib/order";
+import type { ReceiptData } from "@/lib/receipt";
+
+import { OrderActions } from "./order-actions";
+
+// Receipt date/time in the stall's local timezone.
+const receiptDateFmt = new Intl.DateTimeFormat("en-MY", {
+  timeZone: "Asia/Kuala_Lumpur",
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
 // Order detail — the Placed (unpaid) state or the Paid state, chosen by status.
-// Next 16: `params` is a Promise. Print buttons are Phase-5 stubs (the app-bar
-// chip owns the BLE connection; the ESC/POS receipt builder lands in Phase 5).
+// Next 16: `params` is a Promise. Print + payment/new-order actions live in the
+// client OrderActions; this Server Component assembles the receipt payload.
 export default async function OrderDetailPage({
   params,
 }: {
@@ -18,6 +31,29 @@ export default async function OrderDetailPage({
   if (!order) notFound();
 
   const paid = order.status === "paid";
+
+  const receipt: ReceiptData = {
+    stallName: "CAFFEINE CRAVERS",
+    dailyNumber: order.dailyNumber,
+    recordNumber: order.orderSeq,
+    fulfilment: formatFulfilment(order.tableLabel),
+    dateStr: receiptDateFmt.format(order.createdAt),
+    lines: order.items.map((l) => ({
+      quantity: l.quantity,
+      itemName: l.itemName,
+      options: l.optionsSnapshot.map((o) => o.name),
+      note: l.note,
+      unitPriceCents: l.unitPriceCents,
+    })),
+    totalCents: order.totalCents,
+    payment: paid
+      ? {
+          status: "paid",
+          tenderedCents: order.cashTenderedCents ?? 0,
+          changeCents: order.changeCents ?? 0,
+        }
+      : { status: "unpaid" },
+  };
 
   return (
     <main className="flow">
@@ -47,15 +83,6 @@ export default async function OrderDetailPage({
               {formatCents(order.cashTenderedCents ?? 0)} tendered ·{" "}
               {formatCents(order.totalCents)} total
             </div>
-            <div className="flow-actions">
-              <button className="btn ghost" aria-disabled="true" disabled>
-                Print receipt
-              </button>
-              <Link href="/order" className="btn primary">
-                New order →
-              </Link>
-            </div>
-            <p className="stub-note">Receipt printing arrives in Phase 5.</p>
           </>
         ) : (
           <>
@@ -80,22 +107,10 @@ export default async function OrderDetailPage({
               <span className="lbl">Total</span>
               <span className="amt">{formatCents(order.totalCents)}</span>
             </div>
-            <div className="flow-actions">
-              <button className="btn ghost" aria-disabled="true" disabled>
-                Print unpaid receipt
-              </button>
-              <Link href={`/order/${id}/pay`} className="btn primary">
-                Make payment →
-              </Link>
-            </div>
-            <p className="stub-note">
-              Unpaid receipt printing arrives in Phase 5.
-            </p>
-            <Link href="/order" className="btn link">
-              Start a new order →
-            </Link>
           </>
         )}
+
+        <OrderActions receipt={receipt} orderId={id} paid={paid} />
       </div>
     </main>
   );

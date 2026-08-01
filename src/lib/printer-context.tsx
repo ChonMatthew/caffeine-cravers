@@ -32,6 +32,7 @@ import {
   pickWritable,
   type FoundChar,
 } from "@/lib/ble-probe";
+import { writeToPrinter } from "@/lib/printer";
 
 export type PrinterStatus =
   | "unsupported" // no navigator.bluetooth (e.g. Safari) — open in Bluefy
@@ -46,7 +47,9 @@ type PrinterContextValue = {
   error: string | null;
   connect: () => Promise<void>;
   disconnect: () => void;
-  /** The live writable characteristic, once connected — for Phase 5 to print. */
+  /** Send a receipt byte stream to the connected printer. Throws if not connected. */
+  print: (bytes: Uint8Array) => Promise<void>;
+  /** The live writable characteristic, once connected. */
   characteristicRef: React.RefObject<FoundChar | null>;
 };
 
@@ -103,6 +106,14 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
     setStatus("disconnected");
   }, []);
 
+  const print = useCallback(async (bytes: Uint8Array) => {
+    const target = characteristicRef.current;
+    if (!target) {
+      throw new Error("Printer is not connected. Tap the printer chip to pair.");
+    }
+    await writeToPrinter(target.ref, bytes);
+  }, []);
+
   const value = useMemo<PrinterContextValue>(
     () => ({
       status: supported ? status : "unsupported",
@@ -110,9 +121,10 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
       error,
       connect,
       disconnect,
+      print,
       characteristicRef,
     }),
-    [supported, status, deviceName, error, connect, disconnect],
+    [supported, status, deviceName, error, connect, disconnect, print],
   );
 
   return (
