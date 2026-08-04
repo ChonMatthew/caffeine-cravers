@@ -16,7 +16,7 @@ import {
   type Order,
   type OrderItem,
 } from "@/db/schema";
-import type { OrderLineDraft } from "@/lib/order";
+import type { OptionSnapshot, OrderLineDraft } from "@/lib/order";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 // The stall reconciles cash by LOCAL day, never UTC (CLAUDE.md pinned fact).
@@ -357,4 +357,74 @@ export async function getTodaySummary(): Promise<{
     .from(orders)
     .where(localToday);
   return rows[0] ?? { orderCount: 0, paidCents: 0 };
+}
+
+// The stall-local day of an order as a 'YYYY-MM-DD' string. Reports bucket by
+// this, never by UTC, or a late-night sale lands on the wrong day and the totals
+// stop reconciling with the cash box (CLAUDE.md pinned fact).
+const localDayExpr = sql<string>`to_char((${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date, 'YYYY-MM-DD')`;
+
+/** One row on the reports day list: a local day with its PAID takings. */
+export type DailySalesRow = {
+  day: string; // 'YYYY-MM-DD' in the stall's local timezone
+  paidOrders: number;
+  revenueCents: number;
+};
+
+/**
+ * Daily sales, newest day first — PAID orders only (req #10). Revenue is the sum
+ * of paid order totals; unpaid/abandoned tickets never count. Bucketed by the
+ * stall's LOCAL day.
+ */
+export async function getDailySales(): Promise<DailySalesRow[]> {
+  await requireSession();
+  return db
+    .select({
+      day: localDayExpr,
+      paidOrders: sql<number>`count(*)::int`,
+      revenueCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
+    })
+    .from(orders)
+    .where(eq(orders.status, "paid"))
+    .groupBy(localDayExpr)
+    .orderBy(sql`${localDayExpr} desc`);
+}
+
+/** One item/variation line in a day's breakdown: what was sold, how many, for how much. */
+export type ItemBreakdownRow = {
+  itemName: string;
+  options: OptionSnapshot[]; // the chosen variation snapshot ([] = no options)
+  quantity: number;
+  revenueCents: number;
+};
+
+/**
+ * Per item + variation breakdown for one local day, PAID orders only, busiest
+ * first. Groups by the item name AND its exact option snapshot, so "Iced Latte /
+ * Large" and "Iced Latte / Small" are separate rows (req #10 decision). Prices
+ * come from the sale-time snapshot, immune to later catalog edits.
+ *
+ * `localDay` must be a 'YYYY-MM-DD' string (validated by the caller) — it's cast
+ * to ::date in SQL, so a malformed value would raise a cast error.
+ */
+export async function getItemBreakdown(
+  localDay: string,
+): Promise<ItemBreakdownRow[]> {
+  await requireSession();
+  const dayMatch = sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`;
+  return db
+    .select({
+      itemName: orderItems.itemName,
+      options: orderItems.optionsSnapshot,
+      quantity: sql<number>`sum(${orderItems.quantity})::int`,
+      revenueCents: sql<number>`sum(${orderItems.unitPriceCents} * ${orderItems.quantity})::int`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .where(and(eq(orders.status, "paid"), dayMatch))
+    .groupBy(orderItems.itemName, orderItems.optionsSnapshot)
+    .orderBy(
+      sql`sum(${orderItems.quantity}) desc`,
+      asc(orderItems.itemName),
+    );
 }
