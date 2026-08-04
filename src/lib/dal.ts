@@ -338,6 +338,46 @@ export async function getUnpaidOrders(): Promise<UnpaidOrderRow[]> {
     .orderBy(desc(orders.createdAt));
 }
 
+/** One row on the Recent screen — any order from the last rolling 24 hours. */
+export type RecentOrderRow = {
+  id: string;
+  orderSeq: number;
+  dailyNumber: number;
+  status: string; // 'unpaid' | 'paid'
+  tableLabel: string | null;
+  totalCents: number;
+  createdAt: Date;
+};
+
+/**
+ * Orders from the last rolling 24 HOURS — paid and unpaid, newest first, each
+ * with its per-day number. A rolling window (not "today") on purpose: the stall
+ * sometimes trades past midnight, and a calendar-day cutoff would drop the
+ * early-hours tickets the operator still wants to see and reprint. The Recent
+ * screen splits these into the unpaid queue and the paid reprint archive.
+ */
+export async function getRecentOrders(): Promise<RecentOrderRow[]> {
+  await requireSession();
+  return db
+    .select({
+      id: orders.id,
+      orderSeq: orders.orderSeq,
+      status: orders.status,
+      tableLabel: orders.tableLabel,
+      totalCents: orders.totalCents,
+      createdAt: orders.createdAt,
+      dailyNumber: sql<number>`(
+        select count(*)::int from orders o2
+        where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+            = (${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date
+          and o2.order_seq <= ${orders.orderSeq}
+      )`,
+    })
+    .from(orders)
+    .where(sql`${orders.createdAt} >= now() - interval '24 hours'`)
+    .orderBy(desc(orders.createdAt));
+}
+
 /**
  * Today's takings for the home day-strip, bucketed by the stall's LOCAL day
  * (not UTC). Counts every order placed today; the money total is what has
@@ -403,19 +443,22 @@ export type ItemBreakdownRow = {
 };
 
 /**
- * Per item + variation breakdown for one local day, PAID orders only, busiest
- * first. Groups by the item name AND its exact option snapshot, so "Iced Latte /
- * Large" and "Iced Latte / Small" are separate rows (req #10 decision). Prices
- * come from the sale-time snapshot, immune to later catalog edits.
+ * Per item + variation breakdown, PAID orders only, busiest first. Groups by the
+ * item name AND its exact option snapshot, so "Iced Latte / Large" and "Iced
+ * Latte / Small" are separate rows (req #10 decision). Prices come from the
+ * sale-time snapshot, immune to later catalog edits.
  *
- * `localDay` must be a 'YYYY-MM-DD' string (validated by the caller) — it's cast
- * to ::date in SQL, so a malformed value would raise a cast error.
+ * `localDay` is a 'YYYY-MM-DD' string (validated by the caller) for one local
+ * day, or `null` for the all-time view. When given, it's cast to ::date in SQL,
+ * so a malformed value would raise a cast error.
  */
 export async function getItemBreakdown(
-  localDay: string,
+  localDay: string | null,
 ): Promise<ItemBreakdownRow[]> {
   await requireSession();
-  const dayMatch = sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`;
+  const dayMatch = localDay
+    ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
+    : undefined;
   return db
     .select({
       itemName: orderItems.itemName,
@@ -431,4 +474,93 @@ export async function getItemBreakdown(
       sql`sum(${orderItems.quantity}) desc`,
       asc(orderItems.itemName),
     );
+}
+
+/**
+ * Headline figures for the report dashboard — PAID orders only, for one local
+ * day (`localDay`) or all-time (`null`). Cash figures back the drawer count:
+ * `revenueCents` is what should be in the box; tendered − change reconciles to
+ * it. Fulfilment counts split dine-in (table_label set) from takeaway (null).
+ */
+export type ReportSummary = {
+  paidOrders: number;
+  revenueCents: number;
+  itemsSold: number;
+  dineInCount: number;
+  takeawayCount: number;
+  tenderedCents: number;
+  changeCents: number;
+};
+
+export async function getReportSummary(
+  localDay: string | null,
+): Promise<ReportSummary> {
+  await requireSession();
+  const dayMatch = localDay
+    ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
+    : undefined;
+
+  // Order-level aggregates (revenue, cash, fulfilment split) in one pass.
+  const [agg] = await db
+    .select({
+      paidOrders: sql<number>`count(*)::int`,
+      revenueCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
+      tenderedCents: sql<number>`coalesce(sum(${orders.cashTenderedCents}), 0)::int`,
+      changeCents: sql<number>`coalesce(sum(${orders.changeCents}), 0)::int`,
+      dineInCount: sql<number>`(count(*) filter (where ${orders.tableLabel} is not null))::int`,
+      takeawayCount: sql<number>`(count(*) filter (where ${orders.tableLabel} is null))::int`,
+    })
+    .from(orders)
+    .where(and(eq(orders.status, "paid"), dayMatch));
+
+  // Item count lives on the lines, so it needs the join.
+  const [line] = await db
+    .select({
+      itemsSold: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .where(and(eq(orders.status, "paid"), dayMatch));
+
+  return {
+    paidOrders: agg?.paidOrders ?? 0,
+    revenueCents: agg?.revenueCents ?? 0,
+    tenderedCents: agg?.tenderedCents ?? 0,
+    changeCents: agg?.changeCents ?? 0,
+    dineInCount: agg?.dineInCount ?? 0,
+    takeawayCount: agg?.takeawayCount ?? 0,
+    itemsSold: line?.itemsSold ?? 0,
+  };
+}
+
+/** One hour-of-day bucket for the "Trading Day" chart. `hour` is 0–23, local. */
+export type HourlyRow = {
+  hour: number;
+  orders: number;
+  revenueCents: number;
+};
+
+/**
+ * PAID orders bucketed by hour-of-day in the stall's LOCAL timezone, for one day
+ * (`localDay`) or across all days (`null` — the all-time view then shows the
+ * stall's typical trading shape). Only hours with sales are returned; the caller
+ * fills the gaps. Grouped/ordered by output position (see getDailySales).
+ */
+export async function getHourlyBreakdown(
+  localDay: string | null,
+): Promise<HourlyRow[]> {
+  await requireSession();
+  const dayMatch = localDay
+    ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
+    : undefined;
+  return db
+    .select({
+      hour: sql<number>`extract(hour from (${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE}))::int`,
+      orders: sql<number>`count(*)::int`,
+      revenueCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
+    })
+    .from(orders)
+    .where(and(eq(orders.status, "paid"), dayMatch))
+    .groupBy(sql`1`)
+    .orderBy(sql`1`);
 }

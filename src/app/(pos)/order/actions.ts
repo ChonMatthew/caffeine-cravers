@@ -128,9 +128,9 @@ export async function editOrder(input: {
     if (!saved) {
       return { ok: false, error: "This order is paid and can no longer be edited." };
     }
-    // The order detail + incomplete queue cache the old lines/total — refresh.
+    // The order detail + recent list cache the old lines/total — refresh.
     revalidatePath(`/order/${input.orderId}`);
-    revalidatePath("/incomplete");
+    revalidatePath("/recent");
     return { ok: true, orderId: input.orderId };
   } catch (err) {
     return {

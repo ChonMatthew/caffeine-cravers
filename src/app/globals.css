@@ -1533,67 +1533,148 @@ a,
   font-size: 14px;
 }
 
-/* ===== INCOMPLETE ORDERS =================================================== */
-.incomplete {
+/* ===== RECENT ORDERS ====================================================== */
+/* Two sections — the unpaid queue and the paid reprint archive. Status is the
+   accent: marigold = unpaid/attention, jade = settled (the design-system rule),
+   carried on the row's left edge and its number so the two read apart at a
+   glance without a badge. */
+.recent {
   padding: 22px 26px 40px;
 }
-.inc-list {
+.rec-sec {
+  margin-top: 22px;
+}
+.rec-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.rec-sec-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 800;
+  font-size: 15px;
+}
+.rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.rec-dot.unpaid {
+  background: var(--marigold);
+  box-shadow: 0 0 8px rgba(237, 178, 78, 0.5);
+}
+.rec-dot.paid {
+  background: var(--jade);
+  box-shadow: 0 0 8px rgba(55, 168, 140, 0.45);
+}
+.rec-count {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+.rec-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.rec-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.inc-row {
+.rec-row {
   display: flex;
   align-items: center;
   gap: 16px;
   background: var(--surface);
   border: 1px solid var(--hairline);
+  border-left-width: 3px;
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 15px 18px;
   text-decoration: none;
   color: var(--ink);
   box-shadow: 0 2px 0 var(--key-lip);
   min-height: 60px;
 }
-.inc-row:hover {
+.rec-row.unpaid {
+  border-left-color: var(--marigold);
+}
+.rec-row.paid {
+  border-left-color: var(--jade-deep);
+}
+.rec-row:hover {
   background: var(--surface-2);
 }
-.inc-num {
+.rec-num {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 20px;
-  color: var(--marigold);
   min-width: 56px;
 }
-.inc-fulfil {
-  font-family: var(--font-body);
+.rec-row.unpaid .rec-num {
+  color: var(--marigold);
+}
+.rec-row.paid .rec-num {
+  color: var(--jade);
+}
+.rec-fulfil {
   font-size: 14px;
   color: var(--ink-dim);
   min-width: 92px;
 }
-.inc-time {
+.rec-time {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--ink-faint);
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
 }
-.inc-total {
+.rec-daytag {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  color: var(--ink-dim);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.rec-total {
   margin-left: auto;
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 16px;
 }
-.inc-go {
+.rec-go {
   font-family: var(--font-display);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 12px;
   font-weight: 700;
-  color: var(--jade);
   white-space: nowrap;
+  min-width: 118px;
+  text-align: right;
+}
+.rec-row.unpaid .rec-go {
+  color: var(--marigold);
+}
+.rec-row.paid .rec-go {
+  color: var(--jade);
 }
 @media (max-width: 640px) {
-  .inc-go {
+  .rec-go {
     display: none;
+  }
+  .rec-fulfil {
+    min-width: 0;
   }
 }
 
@@ -1615,7 +1696,7 @@ a,
 .rep-day {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-areas: "date rev" "count rev";
+  grid-template-areas: "date rev" "count rev" "bar bar";
   gap: 2px 12px;
   align-items: center;
   background: var(--surface);
@@ -1651,10 +1732,26 @@ a,
 }
 .rep-day .rd-rev {
   grid-area: rev;
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 15px;
   color: var(--jade);
+}
+.rep-day .rd-bar {
+  grid-area: bar;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.rep-day .rd-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--jade-deep);
+}
+.rep-day.on .rd-bar > i {
+  background: var(--jade);
 }
 .rep-detail {
   background: var(--surface);
@@ -1691,7 +1788,7 @@ a,
 .rep-item {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 12px;
+  gap: 5px 12px;
   align-items: baseline;
   padding: 9px 0;
   border-bottom: 1px solid var(--hairline);
@@ -1714,12 +1811,192 @@ a,
   font-size: 13px;
 }
 .rep-item .ri-rev {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 15px;
 }
+/* share bar: quantity relative to the top seller, spanning the row's width */
+.rep-item .ri-share {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.rep-item .ri-share > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--marigold);
+}
+
+/* ---- dashboard blocks (KPI strip, trading chart, cash, fulfilment) ------- */
+.rep-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.kpi {
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kpi .k-val {
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  color: var(--ink);
+}
+.kpi .k-lbl {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.rep-block {
+  margin-top: 22px;
+}
+.rep-block:first-child {
+  margin-top: 0;
+}
+.rep-bhead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.rep-h3 {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink-dim);
+  margin: 0 0 12px;
+}
+.rep-bhead .rep-h3 {
+  margin: 0;
+}
+.rep-cap {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+/* the "Trading Day" — hourly revenue bars, the report's signature view */
+.trade {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 132px;
+  padding-top: 6px;
+}
+.trade-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+.trade-bar-wrap {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.trade-bar {
+  width: 100%;
+  max-width: 34px;
+  min-height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #43b89b, var(--jade-deep));
+}
+.trade-bar.zero {
+  background: var(--hairline);
+  min-height: 2px;
+}
+.trade-hr {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.rep-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 22px;
+}
+.rep-two .rep-block {
+  margin-top: 0;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.cash-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0;
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+.cash-line .mono {
+  font-variant-numeric: tabular-nums;
+}
+.cash-line.big {
+  color: var(--ink);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+.cash-line.big span:first-child {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  font-size: 12px;
+}
+.cash-line.big .mono {
+  font-size: 22px;
+  color: var(--marigold);
+}
+.ff-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 12px;
+  background: var(--hairline);
+}
+.ff-bar > i {
+  display: block;
+  height: 100%;
+}
+.ff-bar .ff-dine {
+  background: var(--cat-cold);
+}
+.ff-bar .ff-take {
+  background: var(--cat-coffee);
+}
 @media (max-width: 860px) {
   .rep-grid {
+    grid-template-columns: 1fr;
+  }
+  .rep-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .rep-two {
     grid-template-columns: 1fr;
   }
 }
