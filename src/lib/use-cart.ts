@@ -29,8 +29,18 @@ export type AddToCart = {
   quantity: number;
 };
 
-export function useCart() {
-  const [state, dispatch] = useReducer(cartReducer, EMPTY_CART);
+/**
+ * Options for the two modes this hook runs in:
+ * - New order (default): starts empty, restores from / persists to localStorage.
+ * - Editing an unpaid order: `persist: false` + a pre-seeded `initial` cart.
+ *   It stays isolated from the localStorage key so editing an order never
+ *   clobbers a new-order ticket the operator has in progress.
+ */
+export type UseCartOptions = { initial?: CartState; persist?: boolean };
+
+export function useCart(opts?: UseCartOptions) {
+  const persist = opts?.persist ?? true;
+  const [state, dispatch] = useReducer(cartReducer, opts?.initial ?? EMPTY_CART);
   // The idempotency key isn't rendered, so it lives in a ref (no re-render, no
   // setState-in-effect). It's populated on mount, before any item can be added.
   const keyRef = useRef<string>("");
@@ -39,7 +49,12 @@ export function useCart() {
   // Restore a cart left behind by a refresh or a dropped connection. Reading
   // localStorage must happen after mount (it doesn't exist during SSR), so this
   // stays an effect — but it only dispatches/assigns a ref, never setState.
+  // Skipped entirely in edit mode: that cart is seeded from the order, not disk.
   useEffect(() => {
+    if (!persist) {
+      keyRef.current = crypto.randomUUID();
+      return;
+    }
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const parsed = raw ? (JSON.parse(raw) as Partial<Persisted>) : null;
@@ -57,11 +72,13 @@ export function useCart() {
     } catch {
       keyRef.current = crypto.randomUUID();
     }
-  }, []);
+  }, [persist]);
 
   // Persist on every change. Skip the very first run (the empty mount state) so
-  // we never clobber a saved cart before the restore dispatch lands.
+  // we never clobber a saved cart before the restore dispatch lands. In edit
+  // mode we never write to the shared cart key at all.
   useEffect(() => {
+    if (!persist) return;
     if (skipFirstPersist.current) {
       skipFirstPersist.current = false;
       return;
@@ -72,7 +89,7 @@ export function useCart() {
     } catch {
       // storage full / unavailable — non-fatal, the cart just won't survive a reload
     }
-  }, [state]);
+  }, [state, persist]);
 
   const add = useCallback((p: AddToCart) => {
     dispatch({ type: "add", ...p });

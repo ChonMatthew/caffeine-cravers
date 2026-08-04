@@ -213,6 +213,42 @@ export async function createOrder(
 }
 
 /**
+ * Replace an unpaid order's lines and total in one transaction (in-place edit
+ * before payment). The `status = unpaid` guard makes it safe: if the order was
+ * paid in the meantime the UPDATE touches zero rows and we return false without
+ * deleting anything. The order's identity (id, order_seq, created_at) is
+ * untouched — only its lines/total/fulfilment change.
+ */
+export async function replaceOrderLines(
+  id: string,
+  data: { totalCents: number; tableLabel: string | null; lines: OrderLineDraft[] },
+): Promise<boolean> {
+  await requireSession();
+  return db.transaction(async (tx) => {
+    const updated = await tx
+      .update(orders)
+      .set({ totalCents: data.totalCents, tableLabel: data.tableLabel })
+      .where(and(eq(orders.id, id), eq(orders.status, "unpaid")))
+      .returning({ id: orders.id });
+    if (updated.length === 0) return false; // paid or gone — leave lines as-is
+
+    await tx.delete(orderItems).where(eq(orderItems.orderId, id));
+    await tx.insert(orderItems).values(
+      data.lines.map((l) => ({
+        orderId: id,
+        itemId: l.itemId,
+        itemName: l.itemName,
+        unitPriceCents: l.unitPriceCents,
+        quantity: l.quantity,
+        note: l.note,
+        optionsSnapshot: l.options,
+      })),
+    );
+    return true;
+  });
+}
+
+/**
  * Take an unpaid order to paid, in one conditional UPDATE. The `status = unpaid`
  * guard makes it safe against a double-pay / race: a second call updates zero
  * rows and returns null. Change is computed by the caller (server-side).

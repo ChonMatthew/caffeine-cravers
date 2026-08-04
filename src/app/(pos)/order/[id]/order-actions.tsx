@@ -1,9 +1,11 @@
 "use client";
 
-// Client actions for the order detail screen: the real Print button (unpaid or
-// final receipt) plus the primary nav (Make payment / New order). Printing never
-// gates anything — if the printer isn't connected we just say so; the order is
-// already saved, and this button doubles as Reprint.
+// Client actions for the order detail screen. Two states:
+//   unpaid → Edit order + Make payment (NO printing — nothing goes to the
+//            barista until the order is paid).
+//   paid   → Print ticket (the barista's make-order; doubles as Reprint) + New
+//            order. Printing never gates anything: the order is already saved,
+//            so a printer that's off just shows a message.
 
 import Link from "next/link";
 import { useState } from "react";
@@ -49,31 +51,35 @@ export function OrderActions({
     }
   }
 
-  const printLabel =
-    phase === "printing"
-      ? "Printing…"
-      : paid
-        ? "Print receipt"
-        : "Print unpaid receipt";
-
   return (
     <>
       <div className="flow-actions">
-        <button className="btn ghost" onClick={print} disabled={phase === "printing"}>
-          {printLabel}
-        </button>
         {paid ? (
-          <Link href="/order" className="btn primary">
-            New order →
-          </Link>
+          <>
+            <button
+              className="btn ghost"
+              onClick={print}
+              disabled={phase === "printing"}
+            >
+              {phase === "printing" ? "Printing…" : "Print ticket"}
+            </button>
+            <Link href="/order" className="btn primary">
+              New order →
+            </Link>
+          </>
         ) : (
-          <Link href={`/order/${orderId}/pay`} className="btn primary">
-            Make payment →
-          </Link>
+          <>
+            <Link href={`/order/${orderId}/edit`} className="btn ghost">
+              Edit order
+            </Link>
+            <Link href={`/order/${orderId}/pay`} className="btn primary">
+              Make payment →
+            </Link>
+          </>
         )}
       </div>
 
-      {msg && (
+      {paid && msg && (
         <p
           className="stub-note"
           style={{ color: phase === "error" ? "var(--brick)" : "var(--jade)" }}

@@ -32,8 +32,8 @@ export default async function OrderDetailPage({
 
   const paid = order.status === "paid";
 
+  // The printed barista ticket — no prices, no payment (requirement change #1/#3).
   const receipt: ReceiptData = {
-    stallName: "CAFFEINE CRAVERS",
     dailyNumber: order.dailyNumber,
     recordNumber: order.orderSeq,
     fulfilment: formatFulfilment(order.tableLabel),
@@ -43,16 +43,7 @@ export default async function OrderDetailPage({
       itemName: l.itemName,
       options: l.optionsSnapshot.map((o) => o.name),
       note: l.note,
-      unitPriceCents: l.unitPriceCents,
     })),
-    totalCents: order.totalCents,
-    payment: paid
-      ? {
-          status: "paid",
-          tenderedCents: order.cashTenderedCents ?? 0,
-          changeCents: order.changeCents ?? 0,
-        }
-      : { status: "unpaid" },
   };
 
   return (
@@ -61,13 +52,14 @@ export default async function OrderDetailPage({
         <div className="mark ok" aria-hidden>
           ✓
         </div>
-        <h2>{paid ? "Paid" : "Order Placed"}</h2>
+        <h2>{paid ? "Order confirmed" : "Order Placed"}</h2>
         <div className="ordernum">
           Order #{order.dailyNumber}
           <span className="rec">record #{order.orderSeq}</span>
         </div>
         <div className="sub">
-          {formatFulfilment(order.tableLabel)} · {paid ? "Complete" : "Saved · unpaid"}
+          {formatFulfilment(order.tableLabel)} ·{" "}
+          {paid ? "Paid · print the ticket" : "Saved · not yet paid"}
         </div>
 
         {paid ? (

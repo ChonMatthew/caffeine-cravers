@@ -5,14 +5,15 @@
 // note + quantity, for EVERY item). The cart lives in useCart (pure reducer +
 // localStorage + idempotency key); Place Order re-prices server-side.
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { formatCents } from "@/lib/money";
-import type { SelectedOption } from "@/lib/order";
+import type { CartState, SelectedOption } from "@/lib/order";
 import { useCart } from "@/lib/use-cart";
 
-import { placeOrder } from "./actions";
+import { editOrder, placeOrder } from "./actions";
 
 export type MenuOption = { id: string; name: string; priceDeltaCents: number };
 export type MenuGroup = {
@@ -42,8 +43,23 @@ function catOf(item: MenuItem): string {
   return item.category ?? UNCATEGORISED;
 }
 
-export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
-  const cart = useCart();
+/** In edit mode the terminal drives an existing unpaid order instead of a new one. */
+export type EditingOrder = {
+  orderId: string;
+  dailyNumber: number;
+  initial: CartState;
+};
+
+export function OrderTerminal({
+  menu,
+  editing,
+}: {
+  menu: MenuItem[];
+  editing?: EditingOrder;
+}) {
+  const cart = useCart(
+    editing ? { initial: editing.initial, persist: false } : undefined,
+  );
   const router = useRouter();
   const [activeCat, setActiveCat] = useState("All");
   const [modalItem, setModalItem] = useState<MenuItem | null>(null);
@@ -74,7 +90,6 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
 
   const handlePlace = useCallback(() => {
     if (!cart.lines.length || placing) return;
-    const key = cart.getIdempotencyKey();
     const lines = cart.lines.map((l) => ({
       itemId: l.itemId,
       optionIds: l.options.map((o) => o.optionId),
@@ -83,8 +98,25 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
     }));
     setPlaceError(null);
     startPlacing(async () => {
+      if (editing) {
+        // Editing an existing unpaid order: replace its lines in place. Keyed by
+        // orderId, so no idempotency key; the cart is ephemeral (nothing to reset).
+        const res = await editOrder({
+          orderId: editing.orderId,
+          tableLabel: cart.tableLabel,
+          lines,
+        });
+        if (res.ok) {
+          router.push(`/order/${editing.orderId}`);
+          router.refresh();
+        } else {
+          setPlaceError(res.error);
+        }
+        return;
+      }
+
       const res = await placeOrder({
-        idempotencyKey: key,
+        idempotencyKey: cart.getIdempotencyKey(),
         tableLabel: cart.tableLabel,
         lines,
       });
@@ -97,7 +129,7 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
         setPlaceError(res.error);
       }
     });
-  }, [cart, placing, router]);
+  }, [cart, editing, placing, router]);
 
   return (
     <div className="order">
@@ -154,8 +186,8 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
       {/* ---------- ticket (right) ---------- */}
       <aside className="ticket">
         <div className="t-head">
-          <h2>Order</h2>
-          <span className="tno">New</span>
+          <h2>{editing ? "Edit order" : "Order"}</h2>
+          <span className="tno">{editing ? `#${editing.dailyNumber}` : "New"}</span>
           <button
             className="clear"
             disabled={!cart.lines.length}
@@ -255,8 +287,18 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
             style={{ color: "var(--brick)", margin: "0 18px 8px" }}
             role="alert"
           >
-            {placeError} — tap Place Order to retry.
+            {placeError} — tap {editing ? "Save changes" : "Place Order"} to retry.
           </p>
+        )}
+
+        {editing && (
+          <Link
+            href={`/order/${editing.orderId}`}
+            className="btn link"
+            style={{ margin: "0 18px 4px", textAlign: "center" }}
+          >
+            ← Cancel edit
+          </Link>
         )}
 
         <button
@@ -264,7 +306,14 @@ export function OrderTerminal({ menu }: { menu: MenuItem[] }) {
           disabled={!cart.lines.length || placing}
           onClick={handlePlace}
         >
-          {placing ? "Placing…" : "Place Order"} <span aria-hidden>→</span>
+          {placing
+            ? editing
+              ? "Saving…"
+              : "Placing…"
+            : editing
+              ? "Save changes"
+              : "Place Order"}{" "}
+          <span aria-hidden>→</span>
         </button>
       </aside>
 

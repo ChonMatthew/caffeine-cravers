@@ -1,10 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import {
   createOrder,
   getActiveItemsWithOptions,
   getOrderById,
   markOrderPaid,
+  replaceOrderLines,
   requireSession,
 } from "@/lib/dal";
 import {
@@ -69,6 +72,70 @@ export async function placeOrder(input: {
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Could not place the order.",
+    };
+  }
+}
+
+/**
+ * Replace the lines of an existing UNPAID order (edit-before-payment). Same
+ * anti-tamper boundary as placeOrder: the client sends only ids + quantities +
+ * notes and every line is RE-PRICED here from the catalog. Refuses once the
+ * order is paid (nothing has printed for the barista before payment, so editing
+ * an unpaid order is safe). No idempotency key — this is keyed by orderId, and
+ * replaceOrderLines is itself guarded by `status = unpaid`.
+ */
+export async function editOrder(input: {
+  orderId: string;
+  tableLabel: string | null;
+  lines: OrderLineInput[];
+}): Promise<PlaceOrderResult> {
+  await requireSession();
+
+  if (!input.lines?.length) return { ok: false, error: "The ticket is empty." };
+
+  const tableLabel =
+    input.tableLabel === null ? null : input.tableLabel.trim();
+
+  try {
+    const order = await getOrderById(input.orderId);
+    if (!order) return { ok: false, error: "Order not found." };
+    if (order.status === "paid") {
+      return { ok: false, error: "This order is paid and can no longer be edited." };
+    }
+
+    const catalog = await getActiveItemsWithOptions();
+    const byId = new Map(catalog.map((i) => [i.id, i]));
+
+    const drafts: OrderLineDraft[] = [];
+    for (const line of input.lines) {
+      const item = byId.get(line.itemId);
+      if (!item) {
+        return { ok: false, error: "An item on the ticket is no longer available." };
+      }
+      drafts.push(buildOrderLine(item, line));
+    }
+
+    const totalCents = drafts.reduce(
+      (sum, d) => sum + d.unitPriceCents * d.quantity,
+      0,
+    );
+
+    const saved = await replaceOrderLines(input.orderId, {
+      totalCents,
+      tableLabel,
+      lines: drafts,
+    });
+    if (!saved) {
+      return { ok: false, error: "This order is paid and can no longer be edited." };
+    }
+    // The order detail + incomplete queue cache the old lines/total — refresh.
+    revalidatePath(`/order/${input.orderId}`);
+    revalidatePath("/incomplete");
+    return { ok: true, orderId: input.orderId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not save the order.",
     };
   }
 }

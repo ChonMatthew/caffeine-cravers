@@ -170,6 +170,84 @@ export function cartItemCount(state: CartState): number {
 }
 
 /**
+ * One saved order line, in the minimal shape needed to rebuild an editable cart
+ * line. This is what `order_items` stores: names + snapshot deltas, no ids for
+ * the options (snapshot, not reference). The unit price is carried so a line
+ * whose item has since vanished from the active catalog can still show its
+ * original price instead of collapsing to zero.
+ */
+export type OrderLineSnapshotView = {
+  itemId: string | null; // null once the source item is hard-deleted
+  itemName: string;
+  quantity: number;
+  note: string | null;
+  unitPriceCents: number;
+  options: OptionSnapshot[]; // { name, priceDeltaCents }
+};
+
+/**
+ * Rebuild an editable cart from a saved (unpaid) order. Snapshots carry option
+ * NAMES, not ids, so each option is matched back to a live catalog option by
+ * name within the item's groups — recovering the group/option ids the terminal
+ * needs to re-select chips and the server needs to re-price. Prices are taken
+ * from the CURRENT catalog (editing = re-quote), consistent with placeOrder's
+ * server-side re-pricing. If an item is no longer in the active catalog its line
+ * is kept read-as-was (original unit price, no re-selectable options) so the
+ * operator can at least see and remove it; the server's buildOrderLine is the
+ * final guard on save.
+ */
+export function reconstructCartState(
+  items: readonly CatalogItemView[],
+  tableLabel: string | null,
+  lines: readonly OrderLineSnapshotView[],
+): CartState {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const cartLines: CartLine[] = lines.map((line) => {
+    const itemId = line.itemId ?? "";
+    const item = itemId ? byId.get(itemId) : undefined;
+    const note = (line.note ?? "").trim();
+
+    const chosen: SelectedOption[] = [];
+    if (item) {
+      for (const snap of line.options) {
+        for (const group of item.optionGroups) {
+          const opt = group.options.find(
+            (o) => o.name === snap.name && o.isActive,
+          );
+          if (opt) {
+            chosen.push({
+              groupId: group.id,
+              optionId: opt.id,
+              name: opt.name,
+              priceDeltaCents: opt.priceDeltaCents,
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    const baseCents = item ? item.priceCents : 0;
+    const unitPriceCents = item
+      ? resolveUnitPrice(baseCents, chosen)
+      : line.unitPriceCents;
+
+    return {
+      key: makeLineKey(itemId, chosen, note),
+      itemId,
+      itemName: line.itemName,
+      baseCents,
+      unitPriceCents,
+      quantity: line.quantity,
+      note,
+      options: chosen,
+    };
+  });
+
+  return { lines: cartLines, tableLabel };
+}
+
+/**
  * Change due for a cash payment, in cents. Pure + server-authoritative: the
  * amount tendered comes from the client, but the change is computed here and
  * the tender is rejected if it's below the total or not a sane integer.
