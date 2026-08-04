@@ -378,6 +378,10 @@ export type DailySalesRow = {
  */
 export async function getDailySales(): Promise<DailySalesRow[]> {
   await requireSession();
+  // Group/order by OUTPUT POSITION (the 1st select column), not by re-emitting
+  // the day expression: Drizzle renders the column unqualified in SELECT but
+  // qualified in GROUP BY, and Postgres then sees two different expressions and
+  // rejects the group. `group by 1` sidesteps that entirely.
   return db
     .select({
       day: localDayExpr,
@@ -386,8 +390,8 @@ export async function getDailySales(): Promise<DailySalesRow[]> {
     })
     .from(orders)
     .where(eq(orders.status, "paid"))
-    .groupBy(localDayExpr)
-    .orderBy(sql`${localDayExpr} desc`);
+    .groupBy(sql`1`)
+    .orderBy(sql`1 desc`);
 }
 
 /** One item/variation line in a day's breakdown: what was sold, how many, for how much. */
