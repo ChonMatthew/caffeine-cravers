@@ -83,7 +83,9 @@ App code lives under `src/` (`src/app`, `src/db`, `src/lib`, `src/proxy.ts`);
 
 Vitest, node environment, pure functions only — no jsdom, no RTL, no E2E.
 Test `lib/money.ts`, `lib/order.ts`, `lib/escpos.ts`, `lib/receipt.ts` (the
-receipt tests should snapshot both the `UNPAID` and paid footer states). Do
+receipt test snapshots the single barista-ticket state — no prices, no payment
+footer; the customer receipt with UNPAID/paid footers was removed in the
+2026-08-04 requirement change). Do
 **not** write tests for Server Actions, components, Drizzle queries, or
 anything touching `navigator.bluetooth` — not worth it for a single-operator
 tool.
