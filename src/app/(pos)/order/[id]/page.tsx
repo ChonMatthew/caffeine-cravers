@@ -1,11 +1,36 @@
 import { notFound } from "next/navigation";
 
+import type { OrderItem } from "@/db/schema";
 import { getOrderById } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
 import { formatFulfilment } from "@/lib/order";
 import type { ReceiptData } from "@/lib/receipt";
 
 import { OrderActions } from "./order-actions";
+
+// The order's lines, itemized with variation + note + line total. Shared so a
+// PAID order can be reviewed (checking back a past order), not just an unpaid one.
+function OrderLines({ items }: { items: OrderItem[] }) {
+  return (
+    <>
+      {items.map((line) => {
+        const vr = line.optionsSnapshot.map((o) => o.name).join(" · ");
+        return (
+          <div className="sumrow" key={line.id}>
+            <span>
+              {line.quantity}× {line.itemName}
+              {vr && <span className="sub-vr"> · {vr}</span>}
+              {line.note && <span className="sub-vr"> · “{line.note}”</span>}
+            </span>
+            <span className="a">
+              {formatCents(line.unitPriceCents * line.quantity)}
+            </span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 // Receipt date/time in the stall's local timezone.
 const receiptDateFmt = new Intl.DateTimeFormat("en-MY", {
@@ -62,7 +87,7 @@ export default async function OrderDetailPage({
           {paid ? "Paid · print the ticket" : "Saved · not yet paid"}
         </div>
 
-        {paid ? (
+        {paid && (
           <>
             <div
               className="due change"
@@ -76,31 +101,17 @@ export default async function OrderDetailPage({
               {formatCents(order.totalCents)} total
             </div>
           </>
-        ) : (
-          <>
-            <div>
-              {order.items.map((line) => {
-                const vr = line.optionsSnapshot.map((o) => o.name).join(" · ");
-                return (
-                  <div className="sumrow" key={line.id}>
-                    <span>
-                      {line.quantity}× {line.itemName}
-                      {vr && <span className="sub-vr"> · {vr}</span>}
-                      {line.note && <span className="sub-vr"> · “{line.note}”</span>}
-                    </span>
-                    <span className="a">
-                      {formatCents(line.unitPriceCents * line.quantity)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="sum-total">
-              <span className="lbl">Total</span>
-              <span className="amt">{formatCents(order.totalCents)}</span>
-            </div>
-          </>
         )}
+
+        {/* the order's lines — always shown, so any order can be reviewed */}
+        <div className="orderlines">
+          {paid && <div className="ol-lbl">Items</div>}
+          <OrderLines items={order.items} />
+        </div>
+        <div className="sum-total">
+          <span className="lbl">Total</span>
+          <span className="amt">{formatCents(order.totalCents)}</span>
+        </div>
 
         <OrderActions receipt={receipt} orderId={id} paid={paid} />
       </div>

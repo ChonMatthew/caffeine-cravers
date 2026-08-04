@@ -326,11 +326,16 @@ export async function getUnpaidOrders(): Promise<UnpaidOrderRow[]> {
       tableLabel: orders.tableLabel,
       totalCents: orders.totalCents,
       createdAt: orders.createdAt,
+      // NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
+      // ${orders.createdAt}. On a single-table select Drizzle emits columns
+      // unqualified ("order_seq"), which the correlated subquery then binds to
+      // its own `o2` — counting every order in the day for every row. Qualifying
+      // with the outer range name `orders` fixes the correlation.
       dailyNumber: sql<number>`(
         select count(*)::int from orders o2
         where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-            = (${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date
-          and o2.order_seq <= ${orders.orderSeq}
+            = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+          and o2.order_seq <= orders.order_seq
       )`,
     })
     .from(orders)
@@ -366,11 +371,16 @@ export async function getRecentOrders(): Promise<RecentOrderRow[]> {
       tableLabel: orders.tableLabel,
       totalCents: orders.totalCents,
       createdAt: orders.createdAt,
+      // NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
+      // ${orders.createdAt}. On a single-table select Drizzle emits columns
+      // unqualified ("order_seq"), which the correlated subquery then binds to
+      // its own `o2` — counting every order in the day for every row. Qualifying
+      // with the outer range name `orders` fixes the correlation.
       dailyNumber: sql<number>`(
         select count(*)::int from orders o2
         where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-            = (${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date
-          and o2.order_seq <= ${orders.orderSeq}
+            = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+          and o2.order_seq <= orders.order_seq
       )`,
     })
     .from(orders)
@@ -563,4 +573,55 @@ export async function getHourlyBreakdown(
     .where(and(eq(orders.status, "paid"), dayMatch))
     .groupBy(sql`1`)
     .orderBy(sql`1`);
+}
+
+/** One line in a day's order log — an individual PAID order, for reprint. */
+export type DayOrderRow = {
+  id: string;
+  dailyNumber: number;
+  tableLabel: string | null;
+  itemCount: number;
+  totalCents: number;
+  createdAt: Date;
+};
+
+/**
+ * Every individual PAID order for one local day (`localDay`) or all-time
+ * (`null`), in the order they were placed (so their per-day numbers read 1..N).
+ * Paid only, to match the report's revenue scope — these rows sum to the day's
+ * takings. Each carries its item count (sum of line quantities) and links out to
+ * the order detail for reprinting.
+ */
+export async function getOrdersForDay(
+  localDay: string | null,
+): Promise<DayOrderRow[]> {
+  await requireSession();
+  const dayMatch = localDay
+    ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
+    : undefined;
+  return db
+    .select({
+      id: orders.id,
+      tableLabel: orders.tableLabel,
+      totalCents: orders.totalCents,
+      createdAt: orders.createdAt,
+      // NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
+      // ${orders.createdAt}. On a single-table select Drizzle emits columns
+      // unqualified ("order_seq"), which the correlated subquery then binds to
+      // its own `o2` — counting every order in the day for every row. Qualifying
+      // with the outer range name `orders` fixes the correlation.
+      dailyNumber: sql<number>`(
+        select count(*)::int from orders o2
+        where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+            = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+          and o2.order_seq <= orders.order_seq
+      )`,
+      itemCount: sql<number>`(
+        select coalesce(sum(order_items.quantity), 0)::int
+        from order_items where order_items.order_id = orders.id
+      )`,
+    })
+    .from(orders)
+    .where(and(eq(orders.status, "paid"), dayMatch))
+    .orderBy(asc(orders.orderSeq));
 }

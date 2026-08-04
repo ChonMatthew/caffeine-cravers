@@ -4,10 +4,13 @@ import {
   getDailySales,
   getHourlyBreakdown,
   getItemBreakdown,
+  getOrdersForDay,
   getReportSummary,
+  type DayOrderRow,
   type HourlyRow,
 } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
+import { formatFulfilment } from "@/lib/order";
 
 // Reports (Phase 6, redesigned): PAID orders only, bucketed by the stall's LOCAL
 // day in the DAL. The left rail lists each day (with a trend bar) plus an
@@ -23,6 +26,23 @@ const dayLabelFmt = new Intl.DateTimeFormat("en-MY", {
   weekday: "short",
   day: "2-digit",
   month: "short",
+});
+
+// Time-of-day for the per-day order log, in the stall's local timezone. All-time
+// rows also need the date (they span many days), so keep a second formatter.
+const timeFmt = new Intl.DateTimeFormat("en-MY", {
+  timeZone: "Asia/Kuala_Lumpur",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+const dateTimeFmt = new Intl.DateTimeFormat("en-MY", {
+  timeZone: "Asia/Kuala_Lumpur",
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
 });
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -80,10 +100,13 @@ export default async function ReportsPage({
   // What the rail highlights: the day string, or the literal "all".
   const selectedKey = isAll ? "all" : selectedDay;
 
-  const [summary, hourly, breakdown] = await Promise.all([
+  // The per-day order log is skipped for All-time — a full history of every
+  // order is too much there; the aggregate views carry that scope instead.
+  const [summary, hourly, breakdown, dayOrders] = await Promise.all([
     getReportSummary(selectedDay),
     getHourlyBreakdown(selectedDay),
     getItemBreakdown(selectedDay),
+    isAll ? Promise.resolve([] as DayOrderRow[]) : getOrdersForDay(selectedDay),
   ]);
 
   const grandCents = days.reduce((sum, d) => sum + d.revenueCents, 0);
@@ -254,6 +277,43 @@ export default async function ReportsPage({
                 </div>
               </section>
             </div>
+
+            {/* the per-day order log — every paid order, tap one to reprint.
+                Omitted for All-time (a full history is too much there). */}
+            {!isAll && (
+            <section className="rep-block">
+              <div className="rep-bhead">
+                <h3 className="rep-h3">Orders</h3>
+                <span className="rep-cap">
+                  {dayOrders.length} order{dayOrders.length === 1 ? "" : "s"} · tap
+                  to reprint
+                </span>
+              </div>
+              {dayOrders.length === 0 ? (
+                <p className="novar">No paid orders for this period.</p>
+              ) : (
+                <div className="rep-orders">
+                  {dayOrders.map((o) => (
+                    <Link key={o.id} href={`/order/${o.id}`} className="ord-row">
+                      <span className="ord-num mono">#{o.dailyNumber}</span>
+                      <span className="ord-time mono">
+                        {(isAll ? dateTimeFmt : timeFmt).format(o.createdAt)}
+                      </span>
+                      <span className="ord-fulfil">
+                        {formatFulfilment(o.tableLabel)}
+                      </span>
+                      <span className="ord-items">
+                        {o.itemCount} item{o.itemCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="ord-total mono">
+                        {formatCents(o.totalCents)}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+            )}
 
             {/* item + variation breakdown, busiest first, with share bars */}
             <section className="rep-block">

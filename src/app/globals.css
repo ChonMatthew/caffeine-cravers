@@ -1020,6 +1020,21 @@ a,
   font-size: 26px;
   color: var(--marigold);
 }
+/* the itemized lines on the order-detail screen (review a past order) */
+.orderlines {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+  text-align: left;
+}
+.orderlines .ol-lbl {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
 .flow-actions {
   display: flex;
   gap: 12px;
@@ -1988,6 +2003,62 @@ a,
 }
 .ff-bar .ff-take {
   background: var(--cat-coffee);
+}
+
+/* per-day order log — one clickable row per paid order (→ detail / reprint) */
+.rep-orders {
+  display: flex;
+  flex-direction: column;
+}
+.ord-row {
+  display: grid;
+  grid-template-columns: 52px 64px 1fr auto auto;
+  gap: 14px;
+  align-items: baseline;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--hairline);
+  text-decoration: none;
+  color: var(--ink);
+  border-radius: 8px;
+}
+.ord-row:last-child {
+  border-bottom: none;
+}
+.ord-row:hover {
+  background: var(--surface-2);
+}
+.ord-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--marigold);
+  font-size: 14px;
+}
+.ord-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+.ord-fulfil {
+  color: var(--ink-dim);
+  font-size: 14px;
+  min-width: 0;
+}
+.ord-items {
+  color: var(--ink-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ord-total {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+@media (max-width: 640px) {
+  .ord-row {
+    grid-template-columns: 44px 1fr auto;
+  }
+  .ord-row .ord-time,
+  .ord-row .ord-items {
+    display: none;
+  }
 }
 @media (max-width: 860px) {
   .rep-grid {
