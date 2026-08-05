@@ -2,6 +2,7 @@ import "server-only"; // never bundle the data layer into client code
 
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { db } from "@/db";
@@ -25,10 +26,17 @@ const STALL_TIMEZONE = "Asia/Kuala_Lumpur";
 // The real auth boundary. proxy.ts only redirects browsers; Server Actions are
 // POST endpoints anyone can hit directly, so enforcement lives here. cache()
 // memoizes the check for one request pass.
+//
+// On an absent/expired session we `redirect('/login')` rather than throwing a
+// raw "Unauthorized": a Server Component page then bounces cleanly to login
+// instead of hitting an error screen, and Server Actions do too. Safe because
+// every action calls this at its TOP, before any try/catch — so the redirect's
+// control-flow signal is never swallowed — and cache() makes the nested DAL
+// calls inside those try blocks memoized no-ops.
 export const requireSession = cache(async () => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!(await verifySessionToken(token))) {
-    throw new Error("Unauthorized");
+    redirect("/login");
   }
   return { role: "operator" as const };
 });

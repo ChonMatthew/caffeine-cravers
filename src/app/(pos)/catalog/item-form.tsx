@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 
 import type { Item } from "@/db/schema";
 import { centsToInput } from "@/lib/money";
@@ -24,8 +24,20 @@ export function ItemForm({ item }: { item?: Item }) {
     initialState,
   );
 
+  // Clear the ADD form after a successful add so the next item starts blank.
+  // `state` is a fresh object per submit, so this fires on each success. The
+  // EDIT form keeps its values (they reflect the saved item).
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (state.ok && !isEdit) formRef.current?.reset();
+  }, [state, isEdit]);
+
   return (
-    <form action={formAction} className={isEdit ? "ic-edit" : "ic-add-form"}>
+    <form
+      ref={formRef}
+      action={formAction}
+      className={isEdit ? "ic-edit" : "ic-add-form"}
+    >
       {item && <input type="hidden" name="id" value={item.id} />}
 
       <div className="ic-field-wrap name">

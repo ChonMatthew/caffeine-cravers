@@ -76,7 +76,22 @@ export function PosShell({ children }: { children: ReactNode }) {
       <div className="app">
         <header className="bar">
           <div className="brand">
-            <span className="bean" aria-hidden />
+            <svg className="reg" viewBox="0 0 24 24" aria-hidden>
+              {/* generic cash register (placeholder brand mark) */}
+              <rect x="3" y="10" width="18" height="10" rx="1.5" fill="var(--jade)" />
+              <rect x="6" y="5" width="8" height="5" rx="1" fill="var(--jade)" />
+              <rect
+                x="15"
+                y="6"
+                width="4"
+                height="4"
+                rx="0.6"
+                fill="var(--jade)"
+                opacity="0.6"
+              />
+              <rect x="5.5" y="13" width="13" height="1.6" rx="0.8" fill="var(--key-lip)" />
+              <rect x="5.5" y="16" width="8" height="1.6" rx="0.8" fill="var(--key-lip)" />
+            </svg>
             Caffeine Cravers
           </div>
           <nav className="nav">

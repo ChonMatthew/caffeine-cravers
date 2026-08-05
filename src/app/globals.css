@@ -114,13 +114,10 @@ a,
   margin-right: 16px;
   white-space: nowrap;
 }
-.brand .bean {
-  width: 12px;
-  height: 16px;
-  border-radius: 60% 60% 55% 55% / 70% 70% 45% 45%;
-  background: var(--jade);
-  box-shadow: inset -2px 0 0 rgba(0, 0, 0, 0.35);
-  transform: rotate(-12deg);
+.brand .reg {
+  width: 22px;
+  height: 22px;
+  flex: none;
 }
 .nav {
   display: flex;

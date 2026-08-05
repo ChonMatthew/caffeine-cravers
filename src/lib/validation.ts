@@ -1,5 +1,10 @@
 import { parseAmountToCents } from "@/lib/money";
 
+// Prices/deltas are stored as int4 cents (~RM 21M ceiling). Cap well below that
+// so an absurd value is rejected with a clean message instead of overflowing and
+// throwing a raw DB error at insert time.
+const MAX_PRICE_CENTS = 100_000_00; // RM 100,000
+
 // Validate the catalog item form. Server-side validation is the only kind that
 // counts — the client form does the same checks only for fast feedback.
 
@@ -29,6 +34,9 @@ export function validateItemForm(formData: FormData): ValidationResult {
   let priceCents = 0;
   try {
     priceCents = parseAmountToCents(priceRaw);
+    if (priceCents > MAX_PRICE_CENTS) {
+      errors.price = "Price is too large — max RM 100,000.";
+    }
   } catch {
     errors.price = "Enter a price like 7.50.";
   }
@@ -67,7 +75,9 @@ export function parseOptionForm(
   // Empty delta means "no upcharge" (0), not an error.
   const priceRaw = String(formData.get("price") ?? "").trim() || "0";
   try {
-    return { name, priceDeltaCents: parseAmountToCents(priceRaw) };
+    const priceDeltaCents = parseAmountToCents(priceRaw);
+    if (priceDeltaCents > MAX_PRICE_CENTS) return null;
+    return { name, priceDeltaCents };
   } catch {
     return null;
   }
