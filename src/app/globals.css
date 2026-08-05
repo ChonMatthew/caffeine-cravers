@@ -68,11 +68,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Remove the legacy 300ms tap delay on interactive elements (matters on iPad). */
+/* Remove the legacy 300ms tap delay on interactive elements (matters on iPad),
+   and kill the grey tap-highlight flash for a native-app feel on touch. */
 button,
 a,
 [role="button"] {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Money is always mono + tabular-nums. */
@@ -88,6 +90,8 @@ a,
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* No rubber-band overscroll on the fixed POS shell (touchscreen feel). */
+  overscroll-behavior: none;
   background-image: radial-gradient(120% 90% at 85% -10%, #241a14 0%, var(--bg) 55%);
 }
 .bar {
@@ -121,6 +125,14 @@ a,
 .nav {
   display: flex;
   gap: 4px;
+  /* Let the nav shrink and scroll horizontally instead of shoving the right-hand
+     controls (printer, Lock) off-screen on narrow devices. */
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav::-webkit-scrollbar {
+  display: none;
 }
 .nav a {
   font-family: var(--font-display);
@@ -149,6 +161,26 @@ a,
   display: flex;
   align-items: center;
   gap: 12px;
+  /* Never let the right-hand controls (printer chip, clock, Lock) be squeezed
+     out — the nav scrolls instead. Lock must always stay reachable. */
+  flex-shrink: 0;
+}
+@media (max-width: 820px) {
+  .bar {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .brand {
+    font-size: 15px;
+    margin-right: 8px;
+  }
+  /* The clock is non-essential chrome — drop it first to make room. */
+  .clock {
+    display: none;
+  }
+  .bar-right {
+    gap: 8px;
+  }
 }
 .lock {
   display: flex;
@@ -925,12 +957,16 @@ a,
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* NB: no `justify-content: center` — centering a flex child that's taller than
+     the container clips its top out of scroll reach. Center via `margin: auto` on
+     the card instead (below): still centered when short, fully scrollable when
+     tall (e.g. a paid order that now lists all its items). */
   padding: 30px;
   overflow-y: auto;
 }
 .flowcard {
   width: min(600px, 100%);
+  margin: auto;
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 18px;
@@ -1068,6 +1104,11 @@ a,
   border: 1px solid var(--hairline);
 }
 .btn.link {
+  /* A standalone full-width link, never a flex-grow child. Without this it
+     inherits `.btn { flex: 1 }` and, inside the order ticket's flex column, the
+     "Cancel edit" link balloons to fill space — compressing the lines list and
+     leaving a gap above Save changes (the edit-screen padding bug). */
+  flex: none;
   background: transparent;
   border: none;
   color: var(--ink-dim);
@@ -1768,6 +1809,45 @@ a,
 .rep-day.on .rd-bar > i {
   background: var(--jade);
 }
+/* collapsible week groups in the day rail (native <details>) */
+.rep-week-sum {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 6px;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+.rep-week-sum::-webkit-details-marker {
+  display: none;
+}
+.rep-week-sum::before {
+  content: "▸";
+  font-size: 9px;
+  color: var(--ink-faint);
+  transition: transform 0.15s ease;
+}
+.rep-week[open] > .rep-week-sum::before {
+  transform: rotate(90deg);
+}
+.rep-week-sum .rw-meta {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--jade);
+  font-weight: 500;
+}
+.rep-week-days {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 8px;
+}
 .rep-detail {
   background: var(--surface);
   border: 1px solid var(--hairline);
@@ -1790,11 +1870,37 @@ a,
   font-size: 18px;
   margin: 0;
 }
+.rep-dhead-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
 .rep-dsum {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 14px;
   color: var(--ink-dim);
+}
+.rep-export {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--jade);
+  background: transparent;
+  border: 1px solid var(--jade-deep);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.rep-export:hover {
+  background: rgba(55, 168, 140, 0.12);
 }
 .rep-items {
   display: flex;

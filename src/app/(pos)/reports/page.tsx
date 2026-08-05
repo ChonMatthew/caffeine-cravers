@@ -6,6 +6,7 @@ import {
   getItemBreakdown,
   getOrdersForDay,
   getReportSummary,
+  type DailySalesRow,
   type DayOrderRow,
   type HourlyRow,
 } from "@/lib/dal";
@@ -47,8 +48,60 @@ const dateTimeFmt = new Intl.DateTimeFormat("en-MY", {
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+// 'YYYY-MM-DD' in the stall's local day — to find "this week" from today.
+const localDayKeyFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kuala_Lumpur",
+});
+// Short "28 Jul" for week-range labels (UTC: the input is already a local date).
+const dmFmt = new Intl.DateTimeFormat("en-MY", {
+  timeZone: "UTC",
+  day: "2-digit",
+  month: "short",
+});
+
 function dayLabel(day: string): string {
   return dayLabelFmt.format(new Date(`${day}T00:00:00Z`));
+}
+
+/** Monday (as 'YYYY-MM-DD') of the week containing a local date string. */
+function weekStartOf(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  const deltaToMonday = (d.getUTCDay() + 6) % 7; // Sun=0 → 6 days after Monday
+  d.setUTCDate(d.getUTCDate() - deltaToMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+/** "28 Jul – 03 Aug" for the Mon–Sun week starting at `weekStart`. */
+function weekLabel(weekStart: string): string {
+  const start = new Date(`${weekStart}T00:00:00Z`);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return `${dmFmt.format(start)} – ${dmFmt.format(end)}`;
+}
+
+type ReportWeek = {
+  start: string;
+  label: string;
+  days: DailySalesRow[];
+  revenueCents: number;
+};
+
+/** Bucket the (newest-first) day rows into weeks, newest week first. */
+function groupByWeek(days: DailySalesRow[]): ReportWeek[] {
+  const weeks: ReportWeek[] = [];
+  const byStart = new Map<string, ReportWeek>();
+  for (const d of days) {
+    const start = weekStartOf(d.day);
+    let w = byStart.get(start);
+    if (!w) {
+      w = { start, label: weekLabel(start), days: [], revenueCents: 0 };
+      byStart.set(start, w);
+      weeks.push(w);
+    }
+    w.days.push(d);
+    w.revenueCents += d.revenueCents;
+  }
+  return weeks;
 }
 
 /** "Large · Iced" — the chosen variation names for a breakdown row. */
@@ -113,6 +166,13 @@ export default async function ReportsPage({
   const grandOrders = days.reduce((sum, d) => sum + d.paidOrders, 0);
   const maxDayRev = Math.max(1, ...days.map((d) => d.revenueCents));
 
+  // Group the day rail into weeks so it stays scannable as days accumulate. A
+  // week opens by default if it's the newest, the current calendar week, or the
+  // one holding the selected day.
+  const weeks = groupByWeek(days);
+  const currentWeekStart = weekStartOf(localDayKeyFmt.format(new Date()));
+  const selectedWeek = selectedDay ? weekStartOf(selectedDay) : null;
+
   const avgCents = summary.paidOrders
     ? Math.round(summary.revenueCents / summary.paidOrders)
     : 0;
@@ -145,26 +205,49 @@ export default async function ReportsPage({
         <p className="novar">No paid sales yet.</p>
       ) : (
         <div className="rep-grid">
-          {/* ---------- day rail (doubles as a revenue trend) ---------- */}
+          {/* ---------- day rail, grouped by collapsible week ---------- */}
           <div className="rep-days">
-            {days.map((d) => {
-              const pct = Math.round((d.revenueCents / maxDayRev) * 100);
+            {weeks.map((w, i) => {
+              const open =
+                i === 0 ||
+                w.start === currentWeekStart ||
+                w.start === selectedWeek;
+              const isCurrent = w.start === currentWeekStart;
               return (
-                <Link
-                  key={d.day}
-                  href={`/reports?day=${d.day}`}
-                  className={`rep-day${d.day === selectedKey ? " on" : ""}`}
-                  aria-current={d.day === selectedKey}
-                >
-                  <span className="rd-date">{dayLabel(d.day)}</span>
-                  <span className="rd-count">
-                    {d.paidOrders} order{d.paidOrders === 1 ? "" : "s"}
-                  </span>
-                  <span className="rd-rev mono">{formatCents(d.revenueCents)}</span>
-                  <span className="rd-bar" aria-hidden>
-                    <i style={{ width: `${pct}%` }} />
-                  </span>
-                </Link>
+                <details key={w.start} className="rep-week" open={open}>
+                  <summary className="rep-week-sum">
+                    <span className="rw-label">
+                      {isCurrent ? "This week" : w.label}
+                    </span>
+                    <span className="rw-meta mono">
+                      {formatCents(w.revenueCents)}
+                    </span>
+                  </summary>
+                  <div className="rep-week-days">
+                    {w.days.map((d) => {
+                      const pct = Math.round((d.revenueCents / maxDayRev) * 100);
+                      return (
+                        <Link
+                          key={d.day}
+                          href={`/reports?day=${d.day}`}
+                          className={`rep-day${d.day === selectedKey ? " on" : ""}`}
+                          aria-current={d.day === selectedKey}
+                        >
+                          <span className="rd-date">{dayLabel(d.day)}</span>
+                          <span className="rd-count">
+                            {d.paidOrders} order{d.paidOrders === 1 ? "" : "s"}
+                          </span>
+                          <span className="rd-rev mono">
+                            {formatCents(d.revenueCents)}
+                          </span>
+                          <span className="rd-bar" aria-hidden>
+                            <i style={{ width: `${pct}%` }} />
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </details>
               );
             })}
             <Link
@@ -184,9 +267,19 @@ export default async function ReportsPage({
           <div className="rep-detail">
             <div className="rep-dhead">
               <h2>{title}</h2>
-              <span className="rep-dsum">
-                {summary.paidOrders} paid · {formatCents(summary.revenueCents)}
-              </span>
+              <div className="rep-dhead-right">
+                <span className="rep-dsum">
+                  {summary.paidOrders} paid · {formatCents(summary.revenueCents)}
+                </span>
+                <a
+                  className="rep-export"
+                  href={`/api/reports/export?day=${isAll ? "all" : selectedDay}`}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Export text ↗
+                </a>
+              </div>
             </div>
 
             {/* headline figures — kept as a quiet strip, not big stat cards */}
