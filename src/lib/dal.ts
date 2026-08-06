@@ -311,46 +311,6 @@ export async function getOrderById(
   return { ...row, dailyNumber: n };
 }
 
-/** One row on the Incomplete Orders page — an unpaid order to resume/settle. */
-export type UnpaidOrderRow = {
-  id: string;
-  orderSeq: number;
-  dailyNumber: number;
-  tableLabel: string | null;
-  totalCents: number;
-  createdAt: Date;
-};
-
-/**
- * Every unpaid order (the "incomplete" queue), newest first, each with its
- * per-day number computed inline (count of same-local-day orders up to it).
- */
-export async function getUnpaidOrders(): Promise<UnpaidOrderRow[]> {
-  await requireSession();
-  return db
-    .select({
-      id: orders.id,
-      orderSeq: orders.orderSeq,
-      tableLabel: orders.tableLabel,
-      totalCents: orders.totalCents,
-      createdAt: orders.createdAt,
-      // NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
-      // ${orders.createdAt}. On a single-table select Drizzle emits columns
-      // unqualified ("order_seq"), which the correlated subquery then binds to
-      // its own `o2` — counting every order in the day for every row. Qualifying
-      // with the outer range name `orders` fixes the correlation.
-      dailyNumber: sql<number>`(
-        select count(*)::int from orders o2
-        where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-            = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-          and o2.order_seq <= orders.order_seq
-      )`,
-    })
-    .from(orders)
-    .where(eq(orders.status, "unpaid"))
-    .orderBy(desc(orders.createdAt));
-}
-
 /** One row on the Recent screen — any order from the last rolling 24 hours. */
 export type RecentOrderRow = {
   id: string;
