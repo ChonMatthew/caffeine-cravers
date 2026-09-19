@@ -9,6 +9,7 @@ import {
   deleteOption,
   deleteOptionGroup,
   requireSession,
+  setGroupRequired,
   setItemActive,
   setOptionActive,
   updateItem,
@@ -81,6 +82,18 @@ export async function removeGroupAction(formData: FormData): Promise<void> {
   const id = String(formData.get("groupId") ?? "");
   if (id) {
     await deleteOptionGroup(id);
+    revalidatePath("/catalog");
+  }
+}
+
+export async function toggleGroupRequiredAction(
+  formData: FormData,
+): Promise<void> {
+  await requireSession();
+  const id = String(formData.get("groupId") ?? "");
+  const required = formData.get("required") === "true";
+  if (id) {
+    await setGroupRequired(id, required);
     revalidatePath("/catalog");
   }
 }

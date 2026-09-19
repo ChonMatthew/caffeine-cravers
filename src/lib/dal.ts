@@ -17,7 +17,7 @@ import {
   type Order,
   type OrderItem,
 } from "@/db/schema";
-import type { OptionSnapshot, OrderLineDraft } from "@/lib/order";
+import type { OptionSnapshot, OrderLineDraft, Station } from "@/lib/order";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 // The stall reconciles cash by LOCAL day, never UTC (CLAUDE.md pinned fact).
@@ -60,7 +60,12 @@ export async function getActiveItems(): Promise<Item[]> {
     .orderBy(asc(items.name));
 }
 
-type ItemWrite = { name: string; priceCents: number; category: string | null };
+type ItemWrite = {
+  name: string;
+  priceCents: number;
+  category: string | null;
+  station: Station;
+};
 
 export async function createItem(data: ItemWrite): Promise<void> {
   await requireSession();
@@ -115,6 +120,15 @@ export async function createOptionGroup(
 export async function deleteOptionGroup(id: string): Promise<void> {
   await requireSession();
   await db.delete(optionGroups).where(eq(optionGroups.id, id));
+}
+
+/** Flip whether an existing group must resolve to exactly one option. */
+export async function setGroupRequired(
+  id: string,
+  required: boolean,
+): Promise<void> {
+  await requireSession();
+  await db.update(optionGroups).set({ required }).where(eq(optionGroups.id, id));
 }
 
 type OptionWrite = { name: string; priceDeltaCents: number };
@@ -214,6 +228,7 @@ export async function createOrder(
         quantity: l.quantity,
         note: l.note,
         optionsSnapshot: l.options,
+        station: l.station,
       })),
     );
     return { id: orderId, created: true };
@@ -250,6 +265,7 @@ export async function replaceOrderLines(
         quantity: l.quantity,
         note: l.note,
         optionsSnapshot: l.options,
+        station: l.station,
       })),
     );
     return true;

@@ -11,7 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import type { OptionSnapshot } from "@/lib/order";
+import type { OptionSnapshot, Station } from "@/lib/order";
 
 // --- items: the menu catalog --------------------------------------------------
 export const items = pgTable(
@@ -22,6 +22,10 @@ export const items = pgTable(
     // Money is stored as whole cents in an integer. Never a float/decimal.
     priceCents: integer("price_cents").notNull(),
     category: text("category"), // nullable
+    // Which chit-printer this item's lines route to (food vs drink station) —
+    // orthogonal to `category`, which is just display grouping. Defaults to
+    // 'drink' so the existing all-drinks catalog needed no backfill.
+    station: text("station").$type<Station>().notNull().default("drink"),
     // Optional item photo. Column added now (free); the upload UI ships later.
     imageUrl: text("image_url"), // nullable
     // Soft-delete: deactivate instead of deleting, so history stays intact.
@@ -30,7 +34,10 @@ export const items = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [check("items_price_nonneg", sql`${t.priceCents} >= 0`)],
+  (t) => [
+    check("items_price_nonneg", sql`${t.priceCents} >= 0`),
+    check("items_station_valid", sql`${t.station} in ('food', 'drink')`),
+  ],
 );
 
 // --- option_groups: per-item choice groups, e.g. "Size", "Temp" ---------------
@@ -168,8 +175,15 @@ export const orderItems = pgTable(
       .$type<OptionSnapshot[]>()
       .notNull()
       .default([]),
+    // Snapshotted from the item at save time, same reasoning as itemName/price:
+    // a reprint always shows the split it was placed under, immune to a later
+    // re-tag of the item's station.
+    station: text("station").$type<Station>().notNull().default("drink"),
   },
-  (t) => [check("order_items_qty_pos", sql`${t.quantity} > 0`)],
+  (t) => [
+    check("order_items_qty_pos", sql`${t.quantity} > 0`),
+    check("order_items_station_valid", sql`${t.station} in ('food', 'drink')`),
+  ],
 );
 
 // Order <-> lines wiring for nested reads (db.query.orders.findFirst({ with })).

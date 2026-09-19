@@ -4,6 +4,14 @@
 // rebuild that recomputes prices from the catalog (never trust the client).
 
 /**
+ * Which chit-printer an item's line prints to. Not a display category (that's
+ * `items.category`, free text) — a routing decision, so it's a closed set.
+ * Today both stations may point at the same physical printer; lib/receipt.ts
+ * still splits the ticket in two so the shape is ready for a second printer.
+ */
+export type Station = "food" | "drink";
+
+/**
  * One option the operator picked for a line. We carry the delta (and name) so a
  * line can be priced and later snapshotted onto an order row without another DB
  * read — the order stays correct even if the catalog is edited afterwards.
@@ -299,6 +307,7 @@ export type CatalogItemView = {
   name: string;
   priceCents: number;
   isActive: boolean;
+  station: Station;
   optionGroups: CatalogGroupView[];
 };
 
@@ -318,6 +327,7 @@ export type OrderLineDraft = {
   quantity: number;
   note: string | null;
   options: OptionSnapshot[];
+  station: Station;
 };
 
 /**
@@ -383,5 +393,6 @@ export function buildOrderLine(
       name: c.name,
       priceDeltaCents: c.priceDeltaCents,
     })),
+    station: item.station,
   };
 }

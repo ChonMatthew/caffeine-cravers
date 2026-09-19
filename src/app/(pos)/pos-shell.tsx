@@ -13,7 +13,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { PrinterProvider } from "@/lib/printer-context";
 
 import { logout } from "./actions";
-import { PrinterChip } from "./printer-chip";
+import { PrinterButton } from "./printer-chip";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -92,7 +92,7 @@ export function PosShell({ children }: { children: ReactNode }) {
               <rect x="5.5" y="13" width="13" height="1.6" rx="0.8" fill="var(--key-lip)" />
               <rect x="5.5" y="16" width="8" height="1.6" rx="0.8" fill="var(--key-lip)" />
             </svg>
-            Caffeine Cravers
+            <span className="brand-text">Caffeine Cravers</span>
           </div>
           <nav className="nav">
             {NAV.map((n) => (
@@ -106,7 +106,7 @@ export function PosShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="bar-right">
-            <PrinterChip />
+            <PrinterButton />
             <Clock />
             <form action={logout}>
               <button className="lock" title="Lock the till">

@@ -6,6 +6,7 @@ import {
   addOptionAction,
   removeGroupAction,
   removeOptionAction,
+  toggleGroupRequiredAction,
   toggleOptionActiveAction,
 } from "./actions";
 
@@ -31,6 +32,24 @@ export function Variations({ item }: { item: ItemWithOptions }) {
           <div className="cgrp-lbl">
             {group.name}
             {group.required && <span className="req">REQ</span>}
+            <form action={toggleGroupRequiredAction}>
+              <input type="hidden" name="groupId" value={group.id} />
+              <input
+                type="hidden"
+                name="required"
+                value={group.required ? "false" : "true"}
+              />
+              <button
+                className="toggle"
+                title={
+                  group.required
+                    ? "Let this group be left unpicked on the order screen"
+                    : "Always require one pick on the order screen"
+                }
+              >
+                {group.required ? "Make optional" : "Make required"}
+              </button>
+            </form>
           </div>
 
           <div className="opts">

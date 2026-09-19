@@ -1,4 +1,5 @@
 import { parseAmountToCents } from "@/lib/money";
+import type { Station } from "@/lib/order";
 
 // Prices/deltas are stored as int4 cents (~RM 21M ceiling). Cap well below that
 // so an absurd value is rejected with a clean message instead of overflowing and
@@ -12,6 +13,7 @@ export type ItemInput = {
   name: string;
   priceCents: number;
   category: string | null;
+  station: Station;
 };
 
 export type ValidationResult =
@@ -24,6 +26,8 @@ export function validateItemForm(formData: FormData): ValidationResult {
   const name = String(formData.get("name") ?? "").trim();
   const priceRaw = String(formData.get("price") ?? "").trim();
   const category = String(formData.get("category") ?? "").trim();
+  // A closed two-value toggle, not free text — coerce rather than error.
+  const station: Station = formData.get("station") === "food" ? "food" : "drink";
 
   if (!name) {
     errors.name = "Name is required.";
@@ -47,7 +51,7 @@ export function validateItemForm(formData: FormData): ValidationResult {
 
   return {
     ok: true,
-    value: { name, priceCents, category: category || null },
+    value: { name, priceCents, category: category || null, station },
   };
 }
 

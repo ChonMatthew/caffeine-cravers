@@ -4,7 +4,7 @@ import type { OrderItem } from "@/db/schema";
 import { getOrderById } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
 import { formatFulfilment } from "@/lib/order";
-import type { ReceiptData } from "@/lib/receipt";
+import type { CustomerReceiptData, ReceiptData } from "@/lib/receipt";
 
 import { OrderActions } from "./order-actions";
 
@@ -68,8 +68,29 @@ export default async function OrderDetailPage({
       itemName: l.itemName,
       options: l.optionsSnapshot.map((o) => o.name),
       note: l.note,
+      station: l.station,
     })),
   };
+
+  // The optional customer copy — only buildable once paid (needs a real
+  // tendered/change, not the unpaid placeholders shown above).
+  const customerReceipt: CustomerReceiptData | null = paid
+    ? {
+        dailyNumber: order.dailyNumber,
+        recordNumber: order.orderSeq,
+        fulfilment: formatFulfilment(order.tableLabel),
+        dateStr: receiptDateFmt.format(order.createdAt),
+        lines: order.items.map((l) => ({
+          quantity: l.quantity,
+          itemName: l.itemName,
+          options: l.optionsSnapshot.map((o) => o.name),
+          unitPriceCents: l.unitPriceCents,
+        })),
+        totalCents: order.totalCents,
+        cashTenderedCents: order.cashTenderedCents ?? 0,
+        changeCents: order.changeCents ?? 0,
+      }
+    : null;
 
   return (
     <main className="flow">
@@ -113,7 +134,12 @@ export default async function OrderDetailPage({
           <span className="amt">{formatCents(order.totalCents)}</span>
         </div>
 
-        <OrderActions receipt={receipt} orderId={id} paid={paid} />
+        <OrderActions
+          receipt={receipt}
+          customerReceipt={customerReceipt}
+          orderId={id}
+          paid={paid}
+        />
       </div>
     </main>
   );

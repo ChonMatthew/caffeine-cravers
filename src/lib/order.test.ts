@@ -196,6 +196,7 @@ const latte: CatalogItemView = {
   name: "Latte",
   priceCents: 800,
   isActive: true,
+  station: "drink",
   optionGroups: [
     {
       id: "size",
@@ -234,6 +235,14 @@ describe("buildOrderLine (server-side re-price)", () => {
       { name: "Large", priceDeltaCents: 200 },
       { name: "Iced", priceDeltaCents: 100 },
     ]);
+  });
+
+  it("carries the item's station through to the draft (for chit routing)", () => {
+    const line = buildOrderLine(
+      { ...latte, station: "food" },
+      { itemId: "latte", optionIds: ["small", "hot"], note: "", quantity: 1 },
+    );
+    expect(line.station).toBe("food");
   });
 
   it("normalises an empty note to null", () => {

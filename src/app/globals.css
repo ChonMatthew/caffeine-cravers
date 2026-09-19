@@ -179,6 +179,18 @@ a,
     gap: 8px;
   }
 }
+/* Below this the wordmark competes with nav + printer + Lock for space — drop
+   the text and keep just the mark, so the brand stays recognisable at a glance
+   instead of getting truncated. */
+@media (max-width: 560px) {
+  .brand {
+    margin-right: 4px;
+    gap: 0;
+  }
+  .brand-text {
+    display: none;
+  }
+}
 .lock {
   display: flex;
   align-items: center;
@@ -214,53 +226,120 @@ a,
   color: var(--jade);
 }
 
-/* printer status chip (Phase 4 stub; transport lands in Phase 5) */
-.pstat {
+/* printer control: a compact icon + status dot in the bar (no room for a text
+   label there), opening a modal with the full status + connect/disconnect. */
+.pbtn {
+  position: relative;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--font-display);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 12px;
-  font-weight: 700;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
   color: var(--ink-dim);
   background: transparent;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  padding: 8px 12px;
-  min-height: 38px;
   cursor: pointer;
-  white-space: nowrap;
 }
-.pstat:disabled {
+.pbtn:disabled {
   cursor: default;
   opacity: 0.7;
 }
-.pstat .g {
-  width: 8px;
-  height: 8px;
+.pbtn .picon {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+}
+.pbtn .pdot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--ink-faint);
-  flex: none;
 }
-.pstat[data-state="connected"] {
+.pbtn[data-state="connected"] {
   color: var(--jade);
   border-color: var(--jade-deep);
 }
-.pstat[data-state="connected"] .g {
+.pbtn[data-state="connected"] .pdot {
   background: var(--jade);
   box-shadow: 0 0 8px var(--jade);
 }
-.pstat[data-state="connecting"] .g {
+.pbtn[data-state="connecting"] .pdot {
   background: var(--marigold);
 }
-.pstat[data-state="error"] {
+.pbtn[data-state="error"] {
   color: var(--brick);
   border-color: rgba(200, 89, 59, 0.4);
 }
-.pstat[data-state="error"] .g {
+.pbtn[data-state="error"] .pdot {
   background: var(--brick);
+}
+
+/* printer modal: one row per printer today; ready to list more than one. */
+.pmodal {
+  width: min(420px, 100%);
+}
+.prow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.prow-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.prow-info .pdot.lg {
+  position: static;
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+.prow-name {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 14px;
+  font-weight: 700;
+}
+.prow-status {
+  color: var(--ink-dim);
+  font-size: 13px;
+  margin-top: 2px;
+}
+.prow-hint {
+  color: var(--ink-faint);
+  font-size: 13px;
+  margin: 14px 0 0;
+}
+.pmodal-btn {
+  flex: none;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 10px 16px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.pmodal-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* content region below the bar (each page's root). Scrolls when a page is
@@ -593,6 +672,30 @@ a,
   cursor: pointer;
 }
 .dine-toggle button.on {
+  background: var(--jade);
+  color: #08110e;
+}
+/* Same segmented look, but for a native (uncontrolled) radio pair — the
+   catalog's Food/Drink toggle, so a plain form.reset() clears it for free. */
+.dine-toggle label.seg {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  padding: 9px 16px;
+  min-height: 42px;
+  cursor: pointer;
+}
+.dine-toggle label.seg input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.dine-toggle label.seg:has(input:checked) {
   background: var(--jade);
   color: #08110e;
 }
@@ -1073,6 +1176,15 @@ a,
   gap: 12px;
   margin-top: 22px;
 }
+/* A secondary, occasional action on the paid screen (e.g. Print customer
+   copy) — bordered like a real action (unlike .btn.link's bare text), but
+   compact and centered so it stays a notch quieter than Print ticket / New
+   order above it, which fire on every order. */
+.flow-secondary {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
 .btn {
   flex: 1;
   font-family: var(--font-display);
@@ -1468,6 +1580,22 @@ a,
   border: 1px solid var(--marigold);
   border-radius: 4px;
   padding: 1px 4px;
+}
+.cgrp-lbl .toggle {
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-family: var(--font-body);
+  text-decoration: underline;
+  padding: 0;
+}
+.cgrp-lbl .toggle:hover {
+  color: var(--ink-dim);
 }
 .opts {
   display: flex;

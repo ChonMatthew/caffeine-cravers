@@ -26,7 +26,9 @@ export function ItemForm({ item }: { item?: Item }) {
 
   // Clear the ADD form after a successful add so the next item starts blank.
   // `state` is a fresh object per submit, so this fires on each success. The
-  // EDIT form keeps its values (they reflect the saved item).
+  // EDIT form keeps its values (they reflect the saved item). Every field
+  // below is a plain uncontrolled input (defaultValue/defaultChecked), so a
+  // native form.reset() is all that's needed — no React state to mirror it.
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (state.ok && !isEdit) formRef.current?.reset();
@@ -60,6 +62,27 @@ export function ItemForm({ item }: { item?: Item }) {
         maxLength={40}
         className="field cat"
       />
+
+      <div className="dine-toggle" role="group" aria-label="Prints to">
+        <label className="seg">
+          <input
+            type="radio"
+            name="station"
+            value="drink"
+            defaultChecked={(item?.station ?? "drink") === "drink"}
+          />
+          Drink
+        </label>
+        <label className="seg">
+          <input
+            type="radio"
+            name="station"
+            value="food"
+            defaultChecked={item?.station === "food"}
+          />
+          Food
+        </label>
+      </div>
 
       <div className="ic-field-wrap">
         <div className="ic-price">

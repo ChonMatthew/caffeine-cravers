@@ -384,10 +384,15 @@ function AddModal({
     quantity: number;
   }) => void;
 }) {
-  // Default-select the first option of each group (single-select chips).
+  // Default-select the first option of each REQUIRED group (single-select
+  // chips) — a required group must always resolve to exactly one option. An
+  // optional group starts with nothing picked, since it's allowed to stay
+  // that way (tapping its chip below toggles it on/off).
   const [selected, setSelected] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    for (const g of item.groups) if (g.options[0]) init[g.id] = g.options[0].id;
+    for (const g of item.groups) {
+      if (g.required && g.options[0]) init[g.id] = g.options[0].id;
+    }
     return init;
   });
   const [note, setNote] = useState("");
@@ -450,7 +455,16 @@ function AddModal({
                     className="chip"
                     aria-pressed={selected[g.id] === o.id}
                     onClick={() =>
-                      setSelected((s) => ({ ...s, [g.id]: o.id }))
+                      setSelected((s) => {
+                        // Optional group, already-selected chip: tap again to
+                        // clear it. A required group always keeps one chosen.
+                        if (!g.required && s[g.id] === o.id) {
+                          const next = { ...s };
+                          delete next[g.id];
+                          return next;
+                        }
+                        return { ...s, [g.id]: o.id };
+                      })
                     }
                   >
                     {o.name}
