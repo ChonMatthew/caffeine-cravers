@@ -2,7 +2,9 @@ import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import { items, optionGroups, options } from "./schema";
+import { eq } from "drizzle-orm";
+
+import { items, optionGroups, options, shops } from "./schema";
 
 // Standalone script: load env ourselves (Next isn't running here).
 config({ path: ".env.local" });
@@ -12,7 +14,7 @@ if (!url) {
   throw new Error("DATABASE_URL is not set. Add it to .env.local.");
 }
 
-// Destructive: wipes and reseeds the catalog. Guarded so it can't fire by
+// Destructive: wipes and reseeds Bukit Tinggi's catalog. Guarded so it can't fire by
 // accident — run with `--force` (npm run db:seed -- --force).
 if (!process.argv.includes("--force")) {
   console.error(
@@ -21,6 +23,11 @@ if (!process.argv.includes("--force")) {
   );
   process.exit(1);
 }
+
+// The menu below is Bukit Tinggi's. Cheras starts with an empty catalog (filled
+// in via the Catalog screen while logged in as Cheras) — the seed never touches
+// Cheras's items.
+const SEED_SHOP = "bukit-tinggi";
 
 // The real Caffeine Cravers menu (from the printed board), modeled per best
 // practice for this system: each row is its own item. Hot drinks and single-
@@ -63,16 +70,32 @@ async function main() {
   const client = postgres(url!, { prepare: false });
   const db = drizzle(client);
   try {
+    // The two fixed shops (the migration inserts them too; this makes a fresh
+    // DB seedable on its own). Never overwrites an existing row.
+    await db
+      .insert(shops)
+      .values([
+        { id: "bukit-tinggi", name: "Bukit Tinggi", refPrefix: "BT" },
+        { id: "cheras", name: "Cheras", refPrefix: "CH" },
+      ])
+      .onConflictDoNothing();
+
     // Deleting items cascades to their option groups + options. Past orders are
-    // untouched (order lines snapshot name/price; item_id is set null).
-    await db.delete(items);
+    // untouched (order lines snapshot name/price; item_id is set null). Only
+    // Bukit Tinggi's catalog is wiped — never Cheras's.
+    await db.delete(items).where(eq(items.shopId, SEED_SHOP));
 
     let itemCount = 0;
     let sizeGroups = 0;
     for (const m of MENU) {
       const [item] = await db
         .insert(items)
-        .values({ name: m.name, priceCents: m.smallCents, category: m.category })
+        .values({
+          shopId: SEED_SHOP,
+          name: m.name,
+          priceCents: m.smallCents,
+          category: m.category,
+        })
         .returning({ id: items.id });
       itemCount++;
 
@@ -93,7 +116,9 @@ async function main() {
         sizeGroups++;
       }
     }
-    console.log(`Seeded ${itemCount} items (${sizeGroups} with a Size variation).`);
+    console.log(
+      `Seeded ${itemCount} Bukit Tinggi items (${sizeGroups} with a Size variation).`,
+    );
   } finally {
     await client.end();
   }

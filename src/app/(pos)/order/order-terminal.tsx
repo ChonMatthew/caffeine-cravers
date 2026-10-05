@@ -52,13 +52,15 @@ export type EditingOrder = {
 
 export function OrderTerminal({
   menu,
+  shopId,
   editing,
 }: {
   menu: MenuItem[];
+  shopId: string;
   editing?: EditingOrder;
 }) {
   const cart = useCart(
-    editing ? { initial: editing.initial, persist: false } : undefined,
+    editing ? { initial: editing.initial, persist: false } : { shopId },
   );
   const router = useRouter();
   const [activeCat, setActiveCat] = useState("All");

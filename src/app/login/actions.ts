@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { verifyPin } from "@/lib/auth";
+import { shopExists } from "@/lib/dal";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
@@ -17,6 +18,7 @@ export async function login(
   formData: FormData,
 ): Promise<LoginState> {
   const pin = String(formData.get("pin") ?? "");
+  const shopId = String(formData.get("shopId") ?? "");
 
   // Flat delay on every attempt — throttles brute force without ever locking
   // out the single operator, who must be able to retry immediately.
@@ -27,8 +29,13 @@ export async function login(
     return { error: "Incorrect PIN." };
   }
 
-  // Success: set the signed session cookie.
-  const token = await signSessionToken();
+  // One PIN for both shops; the picked shop is what the session trades as.
+  if (!shopId || !(await shopExists(shopId))) {
+    return { error: "Pick a shop first." };
+  }
+
+  // Success: set the signed session cookie, carrying the shop.
+  const token = await signSessionToken(shopId);
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     // Won't set over http://localhost — must be false in dev or login "fails"

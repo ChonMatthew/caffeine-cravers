@@ -1,6 +1,18 @@
 # Multi-shop plan — Bukit Tinggi + Cheras
 
-Status: **planned, not started.** No code has changed for this yet.
+Status: **built** (`claude/bold-lovelace-6pgbm9`, PR #1). Green on tsc, ESLint,
+tests and build, and verified end to end against a local Postgres. **Not yet
+applied** to the dev or prod DB (see §7).
+
+Implementation notes beyond the plan below:
+- Carts persist in localStorage **per shop** (`cc-cart-v1:<shopId>`), so a
+  half-built ticket stays with its shop across a switch. A cart saved under
+  the old single key before deploy is dropped once.
+- Also added an `items(shop_id)` index (every catalog read filters on it).
+- The login page calls `connection()` so it renders per request and isn't
+  prerendered at build (it now reads `shops`).
+- Below 1280px the "Caffeine Cravers" wordmark hides (logo and shop tag stay).
+  Otherwise the shop tag pushed Report out of the nav at iPad-landscape width.
 
 ## Decisions (locked 2026-10-05)
 

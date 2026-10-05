@@ -7,6 +7,7 @@ import {
   cartTotalCents,
   computeChangeCents,
   formatFulfilment,
+  formatRef,
   makeLineKey,
   resolveUnitPrice,
   type CartState,
@@ -28,6 +29,13 @@ describe("formatFulfilment", () => {
 function opt(priceDeltaCents: number): SelectedOption {
   return { groupId: "g", optionId: "o", name: "x", priceDeltaCents };
 }
+
+describe("formatRef", () => {
+  it("joins the shop prefix and per-shop number", () => {
+    expect(formatRef("BT", 12)).toBe("BT-12");
+    expect(formatRef("CH", 1)).toBe("CH-1");
+  });
+});
 
 describe("resolveUnitPrice", () => {
   it("returns the base price when nothing is selected", () => {

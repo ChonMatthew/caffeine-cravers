@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import { getActiveItemsWithOptions, getOrderById } from "@/lib/dal";
+import { getActiveItemsWithOptions, getOrderById, requireSession } from "@/lib/dal";
 import { reconstructCartState } from "@/lib/order";
 
 import { OrderTerminal, type MenuItem } from "../../order-terminal";
@@ -19,6 +19,7 @@ export default async function EditOrderPage({
   if (!order) notFound();
   if (order.status === "paid") redirect(`/order/${id}`);
 
+  const { shopId } = await requireSession();
   const items = await getActiveItemsWithOptions();
 
   const menu: MenuItem[] = items.map((item) => ({
@@ -56,6 +57,7 @@ export default async function EditOrderPage({
   return (
     <OrderTerminal
       menu={menu}
+      shopId={shopId}
       editing={{ orderId: order.id, dailyNumber: order.dailyNumber, initial }}
     />
   );

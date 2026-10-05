@@ -1,4 +1,4 @@
-import { getActiveItemsWithOptions } from "@/lib/dal";
+import { getActiveItemsWithOptions, requireSession } from "@/lib/dal";
 
 import { OrderTerminal, type MenuItem } from "./order-terminal";
 
@@ -6,6 +6,7 @@ import { OrderTerminal, type MenuItem } from "./order-terminal";
 // their (active) option groups/options, then hands a plain serialisable menu to
 // the client terminal that owns the cart interaction.
 export default async function OrderPage() {
+  const { shopId } = await requireSession();
   const items = await getActiveItemsWithOptions();
 
   const menu: MenuItem[] = items.map((item) => ({
@@ -25,5 +26,5 @@ export default async function OrderPage() {
     })),
   }));
 
-  return <OrderTerminal menu={menu} />;
+  return <OrderTerminal menu={menu} shopId={shopId} />;
 }

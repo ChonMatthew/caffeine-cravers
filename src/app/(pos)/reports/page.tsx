@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  getCurrentShop,
   getDailySales,
   getHourlyBreakdown,
   getItemBreakdown,
@@ -139,7 +140,7 @@ export default async function ReportsPage({
   searchParams: Promise<{ day?: string }>;
 }) {
   const { day } = await searchParams;
-  const days = await getDailySales();
+  const [days, shop] = await Promise.all([getDailySales(), getCurrentShop()]);
 
   // Selection: 'all' → all-time (null day filter); a valid, present ISO day →
   // that day; otherwise the most recent day with sales.
@@ -190,7 +191,7 @@ export default async function ReportsPage({
   return (
     <main className="report">
       <div className="cat-head">
-        <h1>Reports</h1>
+        <h1>Reports · {shop.name}</h1>
         <span className="count">
           {days.length} day{days.length === 1 ? "" : "s"} ·{" "}
           {formatCents(grandCents)} paid

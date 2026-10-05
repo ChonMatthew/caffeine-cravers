@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildReportText, type ReportTextInput } from "@/lib/report-text";
 
 const base: ReportTextInput = {
+  shopName: "Bukit Tinggi",
   title: "Mon 04 Aug 2026",
   generatedAt: "05 Aug 2026, 21:15 (Asia/Kuala_Lumpur)",
   isAll: false,
@@ -32,7 +33,7 @@ const base: ReportTextInput = {
 describe("buildReportText", () => {
   it("renders every section for a single day", () => {
     const text = buildReportText(base);
-    expect(text).toContain("CAFFEINE CRAVERS — SALES REPORT");
+    expect(text).toContain("CAFFEINE CRAVERS — BUKIT TINGGI — SALES REPORT");
     expect(text).toContain("Mon 04 Aug 2026");
     expect(text).toContain("Revenue");
     expect(text).toContain("RM 67.00"); // revenue

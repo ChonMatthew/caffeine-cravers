@@ -1,4 +1,5 @@
 import {
+  getCurrentShop,
   getDailySales,
   getHourlyBreakdown,
   getItemBreakdown,
@@ -46,6 +47,9 @@ function dayLabel(day: string): string {
 
 export async function GET(request: Request) {
   await requireSession(); // redirects to /login if the session is missing/expired
+  // Every report is the logged-in shop's only (the DAL scopes each read).
+  const shop = await getCurrentShop();
+  const shopTitle = shop.name.toUpperCase();
 
   const dayParam = new URL(request.url).searchParams.get("day");
   const isAll = dayParam === "all";
@@ -65,12 +69,12 @@ export async function GET(request: Request) {
   // No day resolves (there are no paid sales at all) — a minimal empty report.
   if (!isAll && selectedDay === null) {
     const text = [
-      "CAFFEINE CRAVERS — SALES REPORT",
+      `CAFFEINE CRAVERS — ${shopTitle} — SALES REPORT`,
       "No paid sales yet",
       `Generated ${generatedAt}`,
       "",
     ].join("\n");
-    return textResponse(text, "report-none.txt");
+    return textResponse(text, `report-${shop.id}-none.txt`);
   }
 
   const [summary, hourly, breakdown, orders] = await Promise.all([
@@ -81,6 +85,7 @@ export async function GET(request: Request) {
   ]);
 
   const text = buildReportText({
+    shopName: shop.name,
     title: isAll ? "All-time" : dayLabel(selectedDay!),
     generatedAt,
     isAll,
@@ -101,7 +106,10 @@ export async function GET(request: Request) {
     })),
   });
 
-  return textResponse(text, `report-${isAll ? "all-time" : selectedDay}.txt`);
+  return textResponse(
+    text,
+    `report-${shop.id}-${isAll ? "all-time" : selectedDay}.txt`,
+  );
 }
 
 function textResponse(text: string, filename: string): Response {

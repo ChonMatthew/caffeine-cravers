@@ -68,7 +68,13 @@ function Clock() {
   );
 }
 
-export function PosShell({ children }: { children: ReactNode }) {
+export function PosShell({
+  shopName,
+  children,
+}: {
+  shopName: string;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
 
   return (
@@ -93,6 +99,9 @@ export function PosShell({ children }: { children: ReactNode }) {
               <rect x="5.5" y="16" width="8" height="1.6" rx="0.8" fill="var(--key-lip)" />
             </svg>
             <span className="brand-text">Caffeine Cravers</span>
+            {/* Which shop this session trades as — always visible, never hidden
+                at narrow widths like the wordmark is. */}
+            <span className="shop-tag">{shopName}</span>
           </div>
           <nav className="nav">
             {NAV.map((n) => (

@@ -26,6 +26,7 @@ export type ReportTextItem = {
 };
 
 export type ReportTextInput = {
+  shopName: string; // "Bukit Tinggi" — every report is for one shop only
   title: string; // "Mon 04 Aug 2026" or "All-time"
   generatedAt: string; // caller-formatted timestamp, incl. timezone note
   isAll: boolean; // all-time omits the per-order log
@@ -52,7 +53,7 @@ export function buildReportText(d: ReportTextInput): string {
     ? Math.round(d.summary.revenueCents / d.summary.paidOrders)
     : 0;
 
-  out.push("CAFFEINE CRAVERS — SALES REPORT");
+  out.push(`CAFFEINE CRAVERS — ${d.shopName.toUpperCase()} — SALES REPORT`);
   out.push(d.title);
   out.push(`Generated ${d.generatedAt}`);
   out.push(rule());

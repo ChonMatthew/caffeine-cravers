@@ -274,6 +274,14 @@ export function computeChangeCents(
 }
 
 /**
+ * The printed Ref # for an order: the shop's prefix + its per-shop number
+ * ("BT", 12 -> "BT-12"). The one place this format lives.
+ */
+export function formatRef(refPrefix: string, refNo: number): string {
+  return `${refPrefix}-${refNo}`;
+}
+
+/**
  * Human label for an order's fulfilment. null = Takeaway; "" = Dine-in with no
  * table given; any other string = that table ("Table 5").
  */
