@@ -16,6 +16,11 @@ items on an iPad to build an order, prints a receipt to a Bluetooth thermal
 printer, and reviews sales from a laptop. Small, single-tenant, no multi-user
 complexity — don't add abstractions for problems this system doesn't have.
 
+The business trades at **two shops — Bukit Tinggi and Cheras** — never at the
+same time, from the same single iPad. Each shop has its own catalog, orders,
+and reports (see "Shop scoping" below; plan in `docs/multi-shop-plan.md`).
+Two fixed shops is the whole requirement — not a general multi-tenant system.
+
 ## Pinned facts (do not re-derive, do not change without being told)
 
 - Currency: **MYR**. Timezone: **`Asia/Kuala_Lumpur`** — always bucket "day"
@@ -24,6 +29,11 @@ complexity — don't add abstractions for problems this system doesn't have.
   (a flat 300ms delay per attempt is the entire brute-force throttle — this
   was deliberately simplified from an earlier design; don't re-add a lockout
   table unless asked).
+- **One PIN for both shops.** The login screen has a shop picker (no default
+  selection); the chosen shop is stored in the signed session. Switching shop
+  = Lock, then log in choosing the other shop. No per-shop PINs.
+- Shops are fixed rows: `bukit-tinggi` (shop #1, owns all pre-split data) and
+  `cheras`. Slug ids are never renamed; `shops.name` is display text.
 - Printer is **BLE**, proven working: service `18F0`, char `2AF1`, 20-byte
   chunks, 25ms delay, `writeValueWithResponse`. Full details in
   `docs/printer-notes.md` — read it before touching `lib/printer.ts` or
@@ -76,16 +86,23 @@ App code lives under `src/` (`src/app`, `src/db`, `src/lib`, `src/proxy.ts`);
   hard-deleted (keeps their variation config and reads clean). Options may be
   hard-deleted (nothing references them — lines are snapshotted) or hidden via
   `is_active`.
+- **Shop scoping is a hard divide, enforced in the DAL.** `items` and
+  `orders` carry `shop_id`; option groups/options inherit it via their item,
+  order lines via their order. Every DAL read and write filters by the
+  `shopId` that `requireSession()` returns — never a shop id from client
+  input. Nothing from one shop is visible while logged in to the other: no
+  cross-shop or "all shops" views, no shared items, no copy-between-shops.
+  Per-day order numbers count per shop; `order_seq` (Ref #) stays global.
 - **Printing never gates persistence.** Always save first, then print; print
   failure surfaces a Reprint link, it never blocks or rolls back the save.
 
 ## Testing
 
 Vitest, node environment, pure functions only — no jsdom, no RTL, no E2E.
-Test `lib/money.ts`, `lib/order.ts`, `lib/escpos.ts`, `lib/receipt.ts` (the
-receipt test snapshots the single barista-ticket state — no prices, no payment
-footer; the customer receipt with UNPAID/paid footers was removed in the
-2026-08-04 requirement change). Do
+Test `lib/money.ts`, `lib/order.ts`, `lib/escpos.ts`, `lib/receipt.ts`,
+`lib/report-text.ts`. The barista ticket never carries prices, payment, or
+the shop name; the operator-requested customer copy carries prices, cash
+footer, and the shop name as its banner. Do
 **not** write tests for Server Actions, components, Drizzle queries, or
 anything touching `navigator.bluetooth` — not worth it for a single-operator
 tool.
