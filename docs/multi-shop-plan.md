@@ -165,9 +165,17 @@ later through the Catalog screen while logged in as Cheras.
 
 1. Branch for this phase. `tsc --noEmit`, ESLint, tests and build must be
    green before merging to `main`.
-2. Apply the migration to the prod DB **before** the deploy that reads
-   `shop_id` goes live.
+2. **Migration and deploy go together, while the stall is closed.** Neither
+   order works alone:
+   - New code on the old DB fails, because the `shops` table doesn't exist yet.
+   - Old code on the new DB can't place orders or add items, because it
+     doesn't set the now-required `shop_id` and `ref_no`.
+   So settle or abandon any open unpaid orders, run `npm run db:migrate`
+   against prod, then merge to `main` and let Vercel deploy straight away.
+   Vercel **preview** deployments of this branch hit whichever DB their env
+   vars point at. Don't migrate a shared DB just to try a preview.
 3. After deploy the iPad is logged out once. Log in and pick Bukit Tinggi.
+   A cart left half-built under the old storage key is dropped.
 4. No env var changes. `POS_PIN_HASH` and `SESSION_SECRET` stay as they are.
 
 ## Open / noted
