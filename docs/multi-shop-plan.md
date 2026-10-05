@@ -53,9 +53,8 @@ Migration (one file in `drizzle/`):
    renumber existing orders `ref_no = row_number() over (order by order_seq)`
    (old orders become BT-1…BT-N with no gaps) → `SET NOT NULL` → add the FKs,
    the index and `UNIQUE (shop_id, ref_no)`.
-   Old printed tickets showed `Ref #<order_seq>`; after renumbering, those
-   old paper numbers no longer match. Use `ref_no = order_seq` instead if
-   matching old paper matters more than having no gaps. **Default: renumber.**
+   **Decided: renumber.** Old printed tickets showed `Ref #<order_seq>`, and
+   those numbers deliberately no longer match. Having no gaps wins.
 2. Run it against the dev DB first and confirm the row counts are unchanged.
 
 ## 2. Auth + session
@@ -161,6 +160,5 @@ later through the Catalog screen while logged in as Cheras.
 
 ## Open / noted
 
-- Existing orders' Ref #: the plan renumbers them to BT-1…BT-N (no gaps), so
-  old paper tickets' `Ref #<n>` won't match. Switch to `ref_no = order_seq`
-  if that matters (see §1).
+- Nothing open. Existing orders are renumbered to BT-1…BT-N (decided
+  2026-10-05; old paper Ref #s won't match).
