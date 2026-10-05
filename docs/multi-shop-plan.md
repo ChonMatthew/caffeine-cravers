@@ -18,17 +18,27 @@ Status: **planned, not started.** No code has changed for this yet.
 - **Receipt:** the shop name prints as a banner on the **customer copy only**.
   Barista FOOD/DRINKS tickets are unchanged.
 - Daily order numbers ("Order #12 today") are counted **per shop**.
+- **Ref # is per shop and prefixed:** `BT-1, BT-2…` (Bukit Tinggi) and
+  `CH-1, CH-2…` (Cheras). Each series has no gaps, and the prefix makes every
+  Ref # unique across both shops.
+- **Cheras's catalog starts empty.** The seed doesn't touch it.
 
 ## 1. Schema + migration
 
 `src/db/schema.ts`:
 
-- New `shops` table: `id text primary key` (slug: `bukit-tinggi`, `cheras`)
-  and `name text not null`. Slug ids keep the backfill, the JWT claim and
-  debugging readable. Never rename a slug; `name` is the display text.
+- New `shops` table: `id text primary key` (slug: `bukit-tinggi`, `cheras`),
+  `name text not null`, and `ref_prefix text not null unique` (`BT`, `CH`).
+  Slug ids keep the backfill, the JWT claim and debugging readable. Never
+  rename a slug or a prefix; `name` is the display text.
 - `items.shop_id text not null references shops(id)`.
 - `orders.shop_id text not null references shops(id)`, plus an index on
   `(shop_id, created_at)` (all report queries filter on both).
+- `orders.ref_no integer not null` is the per-shop Ref # number, with
+  `UNIQUE (shop_id, ref_no)`. It's printed as `<prefix>-<ref_no>` (`BT-12`).
+  This UNIQUE constraint is the guarantee; the app never reuses a number.
+- `orders.order_seq` stays as an **internal** identity column. It's never
+  printed or shown again; everything user-facing uses `ref_no`.
 - `option_groups`, `options`, `order_items`: **no change**. Groups and options
   inherit their shop through their item, and order lines through their order.
 - Relations: `shops` has many `items` and `orders`.
@@ -38,9 +48,14 @@ Migration (one file in `drizzle/`):
 1. `drizzle-kit generate` emits `ADD COLUMN shop_id ... NOT NULL`, which fails
    on tables that already have rows. Edit the generated SQL, in the same
    committed migration (not out of band), to:
-   create `shops` → insert both rows → add `shop_id` as nullable →
-   `UPDATE items/orders SET shop_id = 'bukit-tinggi'` → `SET NOT NULL` →
-   add the FK and index.
+   create `shops` → insert both rows → add `shop_id` and `ref_no` as
+   nullable → `UPDATE items/orders SET shop_id = 'bukit-tinggi'` →
+   renumber existing orders `ref_no = row_number() over (order by order_seq)`
+   (old orders become BT-1…BT-N with no gaps) → `SET NOT NULL` → add the FKs,
+   the index and `UNIQUE (shop_id, ref_no)`.
+   Old printed tickets showed `Ref #<order_seq>`; after renumbering, those
+   old paper numbers no longer match. Use `ref_no = order_seq` instead if
+   matching old paper matters more than having no gaps. **Default: renumber.**
 2. Run it against the dev DB first and confirm the row counts are unchanged.
 
 ## 2. Auth + session
@@ -73,9 +88,19 @@ Every function scopes by `requireSession().shopId`:
 - **Orders:** `createOrder` sets `shop_id`. `getOrderById`, `replaceOrderLines`
   and `markOrderPaid` add `AND shop_id = ?`, so `/order/<id>` from the other
   shop returns not-found and can't be edited or paid.
+- **Ref # assignment** (`createOrder`, inside its existing transaction): the
+  insert sets `ref_no = (select coalesce(max(ref_no), 0) + 1 from orders
+  where shop_id = $shop)` in the same statement. There's no separate counter
+  to bump, so an idempotent retry (`onConflictDoNothing`) uses up no number
+  and leaves no gap. With one iPad there are no real concurrent inserts.
+  If two ever raced, `UNIQUE (shop_id, ref_no)` rejects the second rather
+  than duplicating a number. `replaceOrderLines` never touches `ref_no`.
 - **Daily number:** the per-day count in `getOrderById`, `getRecentOrders` and
-  `getOrdersForDay` adds `o2.shop_id = orders.shop_id` (same qualified-outer-
-  column trick the existing NOTE comments describe).
+  `getOrdersForDay` adds `o2.shop_id = orders.shop_id` and compares `ref_no`
+  instead of `order_seq` (same qualified-outer-column trick the existing NOTE
+  comments describe). `getOrdersForDay` orders by `ref_no`.
+- Order reads return the formatted Ref # (`BT-12`) by joining `shops`, or
+  the pages format it from `ref_prefix` + `ref_no`.
 - **Lists and reports:** `getRecentOrders`, `getTodaySummary`, `getDailySales`,
   `getItemBreakdown`, `getReportSummary`, `getHourlyBreakdown` and
   `getOrdersForDay` filter `orders.shop_id`.
@@ -95,7 +120,12 @@ from the other shop fails as "no longer available".
   the shop name to the heading.
 - **Customer copy** (`lib/receipt.ts`): `CustomerReceiptData` gains
   `shopName`, printed as the first line (centered or plain, within 32 cols,
-  ASCII). `order-actions.tsx` passes it in. Barista tickets are untouched.
+  ASCII). `order-actions.tsx` passes it in. Barista tickets get no shop name.
+- **Ref # on paper and screen:** `recordNumber: number` becomes
+  `refLabel: string` (`"BT-12"`) in both `ReceiptData` and
+  `CustomerReceiptData`, so **both** tickets print `Ref #BT-12`. The order
+  detail page's `record #…` shows the same label. `Order #12  Ref #BT-123`
+  fits within 32 columns.
 - **Reports + export:** the report page title and `report-text.ts` header
   include the shop name ("CAFFEINE CRAVERS — CHERAS — SALES REPORT"), and the
   export filename includes the slug (`report-cheras-2026-10-05.txt`).
@@ -103,13 +133,17 @@ from the other shop fails as "no longer available".
 ## 5. Seed
 
 `src/db/seed.ts` upserts both shop rows and seeds the existing menu into
-**Bukit Tinggi** only. The operator enters Cheras's menu through the
-Catalog screen while logged in as Cheras.
+**Bukit Tinggi** only. It wipes and reseeds Bukit Tinggi's items only, never
+Cheras's. **Cheras starts with an empty catalog.** The operator fills it
+later through the Catalog screen while logged in as Cheras.
 
 ## 6. Tests (Vitest, pure only)
 
 - `receipt.test.ts`: the customer copy prints the shop name and stays within
-  32 cols. The barista-ticket tests stay as they are.
+  32 cols. Both tickets print `Ref #BT-…` (the barista snapshot changes only
+  on that line, still with no prices and no shop name).
+- A pure `formatRef(prefix, refNo)` helper (e.g. in `lib/order.ts`) with a
+  unit test, so the `BT-12` format lives in one place.
 - `report-text.test.ts`: the header includes the shop name.
 - No tests for the DAL, actions or login (CLAUDE.md testing rule). Verify
   scoping by hand: log in to each shop, place an order, and confirm it's
@@ -127,7 +161,6 @@ Catalog screen while logged in as Cheras.
 
 ## Open / noted
 
-- **Ref # (`order_seq`) stays global** across both shops, so each shop's
-  receipts show gaps in Ref #. Daily numbers are per shop and gapless. This is
-  fine for now; a per-shop record number would need a stored counter.
-- Cheras's menu: does the operator have it ready to enter after deploy?
+- Existing orders' Ref #: the plan renumbers them to BT-1…BT-N (no gaps), so
+  old paper tickets' `Ref #<n>` won't match. Switch to `ref_no = order_seq`
+  if that matters (see §1).

@@ -92,7 +92,10 @@ App code lives under `src/` (`src/app`, `src/db`, `src/lib`, `src/proxy.ts`);
   `shopId` that `requireSession()` returns — never a shop id from client
   input. Nothing from one shop is visible while logged in to the other: no
   cross-shop or "all shops" views, no shared items, no copy-between-shops.
-  Per-day order numbers count per shop; `order_seq` (Ref #) stays global.
+  Per-day order numbers count per shop. **Ref # is per shop and prefixed**
+  (`BT-12`, `CH-3`): `orders.ref_no` with `UNIQUE (shop_id, ref_no)`, no
+  gaps within a shop, and the prefix keeps it unique across shops.
+  `order_seq` is internal only — never printed or shown.
 - **Printing never gates persistence.** Always save first, then print; print
   failure surfaces a Reprint link, it never blocks or rolls back the save.
 
