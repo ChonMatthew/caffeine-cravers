@@ -119,6 +119,23 @@ a,
   height: 22px;
   flex: none;
 }
+/* The logged-in shop, next to the wordmark. Stays visible at every width. */
+.shop-tag {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--jade);
+  border: 1px solid var(--jade-deep);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+/* On an iPad in landscape (~1180px) wordmark + shop tag + full nav don't fit,
+   and the nav would scroll Report out of view. The shop name matters more at
+   the till than the wordmark, so the wordmark goes first. */
+@media (max-width: 1280px) {
+  .brand-text {
+    display: none;
+  }
+}
 .nav {
   display: flex;
   gap: 4px;
@@ -179,16 +196,15 @@ a,
     gap: 8px;
   }
 }
-/* Below this the wordmark competes with nav + printer + Lock for space — drop
-   the text and keep just the mark, so the brand stays recognisable at a glance
-   instead of getting truncated. */
+/* Phone widths: tighten the brand (mark + shop tag; the wordmark is already
+   hidden below 1280px) so nav + printer + Lock keep their room. */
 @media (max-width: 560px) {
   .brand {
     margin-right: 4px;
     gap: 0;
   }
-  .brand-text {
-    display: none;
+  .shop-tag {
+    margin-left: 6px;
   }
 }
 .lock {

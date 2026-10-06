@@ -12,23 +12,30 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export async function signSessionToken(): Promise<string> {
-  return new SignJWT({ role: "operator" })
+// The shop the operator picked at login rides in the signed token, so it can't
+// be changed client-side. Switching shop = Lock, then log in to the other one.
+export async function signSessionToken(shopId: string): Promise<string> {
+  return new SignJWT({ role: "operator", shopId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
     .sign(getSecret());
 }
 
+/** The session's shop id, or null when there's no valid session. */
 export async function verifySessionToken(
   token: string | undefined,
-): Promise<boolean> {
-  if (!token) return false;
+): Promise<string | null> {
+  if (!token) return null;
   try {
-    await jwtVerify(token, getSecret());
-    return true;
+    const { payload } = await jwtVerify(token, getSecret());
+    // A token from before the shop split has no shopId: treat it as logged
+    // out, so the operator picks a shop once after that deploy.
+    return typeof payload.shopId === "string" && payload.shopId
+      ? payload.shopId
+      : null;
   } catch {
     // Invalid signature, expired, or malformed — all mean "no session".
-    return false;
+    return null;
   }
 }

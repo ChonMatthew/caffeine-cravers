@@ -1,8 +1,9 @@
 import "server-only"; // never bundle the data layer into client code
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { cache } from "react";
 
 import { db } from "@/db";
@@ -12,12 +13,19 @@ import {
   options,
   orderItems,
   orders,
+  shops,
   type Item,
   type ItemWithOptions,
   type Order,
   type OrderItem,
+  type Shop,
 } from "@/db/schema";
-import type { OptionSnapshot, OrderLineDraft, Station } from "@/lib/order";
+import {
+  formatRef,
+  type OptionSnapshot,
+  type OrderLineDraft,
+  type Station,
+} from "@/lib/order";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 // The stall reconciles cash by LOCAL day, never UTC (CLAUDE.md pinned fact).
@@ -33,30 +41,65 @@ const STALL_TIMEZONE = "Asia/Kuala_Lumpur";
 // every action calls this at its TOP, before any try/catch — so the redirect's
 // control-flow signal is never swallowed — and cache() makes the nested DAL
 // calls inside those try blocks memoized no-ops.
+//
+// It also returns the session's shop — the ONLY source of shopId in the app.
+// Every DAL read/write below scopes by it; a shop id from client input is never
+// trusted (CLAUDE.md: shop scoping is a hard divide, enforced here).
 export const requireSession = cache(async () => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!(await verifySessionToken(token))) {
+  const shopId = await verifySessionToken(token);
+  if (shopId === null) {
     redirect("/login");
   }
-  return { role: "operator" as const };
+  return { role: "operator" as const, shopId };
+});
+
+/** Both shops, for the login picker. Public on purpose: no session yet. */
+export async function getShops(): Promise<Shop[]> {
+  // The login page reads no cookies, so without this Next would prerender it at
+  // build time (and need the DB then). Render it per request instead.
+  await connection();
+  return db.select().from(shops).orderBy(asc(shops.name));
+}
+
+/** True when `id` is a real shop — login validates the picked shop with this. */
+export async function shopExists(id: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: shops.id })
+    .from(shops)
+    .where(eq(shops.id, id));
+  return rows.length > 0;
+}
+
+/** The logged-in shop (name for the header/receipt, prefix for Ref #s). */
+export const getCurrentShop = cache(async (): Promise<Shop> => {
+  const { shopId } = await requireSession();
+  const [shop] = await db.select().from(shops).where(eq(shops.id, shopId));
+  // A signed token naming a shop that doesn't exist: treat as logged out.
+  if (!shop) redirect("/login");
+  return shop;
 });
 
 // The single place the app reads the catalog from. Every read requires a
-// session first.
+// session first, and only ever sees the session's shop.
 
 /** All items, active and inactive — for the catalog management screen. */
 export async function getAllItems(): Promise<Item[]> {
-  await requireSession();
-  return db.select().from(items).orderBy(asc(items.name));
+  const { shopId } = await requireSession();
+  return db
+    .select()
+    .from(items)
+    .where(eq(items.shopId, shopId))
+    .orderBy(asc(items.name));
 }
 
 /** Only active items — for the order/till screen. */
 export async function getActiveItems(): Promise<Item[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   return db
     .select()
     .from(items)
-    .where(eq(items.isActive, true))
+    .where(and(eq(items.shopId, shopId), eq(items.isActive, true)))
     .orderBy(asc(items.name));
 }
 
@@ -68,18 +111,43 @@ type ItemWrite = {
 };
 
 export async function createItem(data: ItemWrite): Promise<void> {
-  await requireSession();
-  await db.insert(items).values(data);
+  const { shopId } = await requireSession();
+  await db.insert(items).values({ ...data, shopId });
 }
 
+// Writes by id also match the session's shop, so a stale form from the other
+// shop's catalog updates nothing.
 export async function updateItem(id: string, data: ItemWrite): Promise<void> {
-  await requireSession();
-  await db.update(items).set(data).where(eq(items.id, id));
+  const { shopId } = await requireSession();
+  await db
+    .update(items)
+    .set(data)
+    .where(and(eq(items.id, id), eq(items.shopId, shopId)));
 }
 
 export async function setItemActive(id: string, active: boolean): Promise<void> {
-  await requireSession();
-  await db.update(items).set({ isActive: active }).where(eq(items.id, id));
+  const { shopId } = await requireSession();
+  await db
+    .update(items)
+    .set({ isActive: active })
+    .where(and(eq(items.id, id), eq(items.shopId, shopId)));
+}
+
+// Option groups/options carry no shop_id — they inherit it via their item. These
+// subqueries are "ids that belong to this shop", for scoping writes by id.
+function shopItemIds(shopId: string) {
+  return db
+    .select({ id: items.id })
+    .from(items)
+    .where(eq(items.shopId, shopId));
+}
+
+function shopGroupIds(shopId: string) {
+  return db
+    .select({ id: optionGroups.id })
+    .from(optionGroups)
+    .innerJoin(items, eq(optionGroups.itemId, items.id))
+    .where(eq(items.shopId, shopId));
 }
 
 // --- catalog with variations -------------------------------------------------
@@ -90,8 +158,9 @@ export async function setItemActive(id: string, active: boolean): Promise<void> 
  * so the management screen can reactivate them.
  */
 export async function getCatalog(): Promise<ItemWithOptions[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   return db.query.items.findMany({
+    where: (i, { eq }) => eq(i.shopId, shopId),
     orderBy: (i, { asc }) => asc(i.name),
     with: {
       optionGroups: {
@@ -108,18 +177,28 @@ export async function getCatalog(): Promise<ItemWithOptions[]> {
 
 type GroupWrite = { name: string; required: boolean };
 
+/** Adds a group to one of this shop's items; an item from another shop is a no-op. */
 export async function createOptionGroup(
   itemId: string,
   data: GroupWrite,
 ): Promise<void> {
-  await requireSession();
+  const { shopId } = await requireSession();
+  const owned = await db
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.shopId, shopId)));
+  if (owned.length === 0) return;
   await db.insert(optionGroups).values({ itemId, ...data });
 }
 
 /** Hard delete — cascades to the group's options. Safe: orders snapshot lines. */
 export async function deleteOptionGroup(id: string): Promise<void> {
-  await requireSession();
-  await db.delete(optionGroups).where(eq(optionGroups.id, id));
+  const { shopId } = await requireSession();
+  await db
+    .delete(optionGroups)
+    .where(
+      and(eq(optionGroups.id, id), inArray(optionGroups.itemId, shopItemIds(shopId))),
+    );
 }
 
 /** Flip whether an existing group must resolve to exactly one option. */
@@ -127,24 +206,38 @@ export async function setGroupRequired(
   id: string,
   required: boolean,
 ): Promise<void> {
-  await requireSession();
-  await db.update(optionGroups).set({ required }).where(eq(optionGroups.id, id));
+  const { shopId } = await requireSession();
+  await db
+    .update(optionGroups)
+    .set({ required })
+    .where(
+      and(eq(optionGroups.id, id), inArray(optionGroups.itemId, shopItemIds(shopId))),
+    );
 }
 
 type OptionWrite = { name: string; priceDeltaCents: number };
 
+/** Adds an option to one of this shop's groups; another shop's group is a no-op. */
 export async function createOption(
   groupId: string,
   data: OptionWrite,
 ): Promise<void> {
-  await requireSession();
+  const { shopId } = await requireSession();
+  const owned = await db
+    .select({ id: optionGroups.id })
+    .from(optionGroups)
+    .innerJoin(items, eq(optionGroups.itemId, items.id))
+    .where(and(eq(optionGroups.id, groupId), eq(items.shopId, shopId)));
+  if (owned.length === 0) return;
   await db.insert(options).values({ groupId, ...data });
 }
 
 /** Hard delete a single option. Safe for the same reason as groups. */
 export async function deleteOption(id: string): Promise<void> {
-  await requireSession();
-  await db.delete(options).where(eq(options.id, id));
+  const { shopId } = await requireSession();
+  await db
+    .delete(options)
+    .where(and(eq(options.id, id), inArray(options.groupId, shopGroupIds(shopId))));
 }
 
 /** Soft toggle: hide an option from the order screen without losing the row. */
@@ -152,8 +245,11 @@ export async function setOptionActive(
   id: string,
   active: boolean,
 ): Promise<void> {
-  await requireSession();
-  await db.update(options).set({ isActive: active }).where(eq(options.id, id));
+  const { shopId } = await requireSession();
+  await db
+    .update(options)
+    .set({ isActive: active })
+    .where(and(eq(options.id, id), inArray(options.groupId, shopGroupIds(shopId))));
 }
 
 // --- order flow (Phase 4) ----------------------------------------------------
@@ -163,9 +259,11 @@ export async function setOptionActive(
  * only their ACTIVE options, ordered for display. One round-trip.
  */
 export async function getActiveItemsWithOptions(): Promise<ItemWithOptions[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   return db.query.items.findMany({
-    where: (i, { eq }) => eq(i.isActive, true),
+    // Shop-scoped, so placeOrder/editOrder (which reprice from this) reject an
+    // item from the other shop as "no longer available".
+    where: (i, { and, eq }) => and(eq(i.shopId, shopId), eq(i.isActive, true)),
     orderBy: (i, { asc }) => asc(i.name),
     with: {
       optionGroups: {
@@ -192,15 +290,21 @@ export type CreateOrderInput = {
  * Persist an unpaid order and its lines in one transaction. The idempotency key
  * is the anti-double-charge guard: a retry with the same key inserts nothing
  * and returns the order that already exists. Returns the order id either way.
+ *
+ * The shop's next Ref # is computed inside the same INSERT, so a retry that
+ * hits the idempotency conflict burns no number (no gap). UNIQUE (shop_id,
+ * ref_no) rejects — never duplicates — if two inserts ever raced.
  */
 export async function createOrder(
   input: CreateOrderInput,
 ): Promise<{ id: string; created: boolean }> {
-  await requireSession();
+  const { shopId } = await requireSession();
   return db.transaction(async (tx) => {
     const inserted = await tx
       .insert(orders)
       .values({
+        shopId,
+        refNo: sql`(select coalesce(max(o2.ref_no), 0) + 1 from orders o2 where o2.shop_id = ${shopId})`,
         status: "unpaid",
         totalCents: input.totalCents,
         tableLabel: input.tableLabel,
@@ -239,19 +343,26 @@ export async function createOrder(
  * Replace an unpaid order's lines and total in one transaction (in-place edit
  * before payment). The `status = unpaid` guard makes it safe: if the order was
  * paid in the meantime the UPDATE touches zero rows and we return false without
- * deleting anything. The order's identity (id, order_seq, created_at) is
- * untouched — only its lines/total/fulfilment change.
+ * deleting anything. The order's identity (id, ref_no, created_at) is
+ * untouched — only its lines/total/fulfilment change. Another shop's order
+ * matches zero rows, same as a paid one.
  */
 export async function replaceOrderLines(
   id: string,
   data: { totalCents: number; tableLabel: string | null; lines: OrderLineDraft[] },
 ): Promise<boolean> {
-  await requireSession();
+  const { shopId } = await requireSession();
   return db.transaction(async (tx) => {
     const updated = await tx
       .update(orders)
       .set({ totalCents: data.totalCents, tableLabel: data.tableLabel })
-      .where(and(eq(orders.id, id), eq(orders.status, "unpaid")))
+      .where(
+        and(
+          eq(orders.id, id),
+          eq(orders.shopId, shopId),
+          eq(orders.status, "unpaid"),
+        ),
+      )
       .returning({ id: orders.id });
     if (updated.length === 0) return false; // paid or gone — leave lines as-is
 
@@ -281,7 +392,7 @@ export async function markOrderPaid(
   id: string,
   data: { tenderedCents: number; changeCents: number },
 ): Promise<{ id: string } | null> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const rows = await db
     .update(orders)
     .set({
@@ -290,7 +401,13 @@ export async function markOrderPaid(
       changeCents: data.changeCents,
       paidAt: new Date(),
     })
-    .where(and(eq(orders.id, id), eq(orders.status, "unpaid")))
+    .where(
+      and(
+        eq(orders.id, id),
+        eq(orders.shopId, shopId),
+        eq(orders.status, "unpaid"),
+      ),
+    )
     .returning({ id: orders.id });
   return rows[0] ?? null;
 }
@@ -298,39 +415,60 @@ export async function markOrderPaid(
 /** An order with its lines + its per-day number — for the placed/detail screen. */
 export type OrderWithItems = Order & {
   items: OrderItem[];
-  /** 1-based position among orders on the same LOCAL day ("Order 12 today"). */
+  /** 1-based position among the SHOP's orders on the same LOCAL day ("Order 12 today"). */
   dailyNumber: number;
+  /** The printed Ref #, shop prefix included ("BT-12"). */
+  refLabel: string;
 };
 
+/** One of this shop's orders, or null — another shop's order id is not found. */
 export async function getOrderById(
   id: string,
 ): Promise<OrderWithItems | null> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const row = await db.query.orders.findFirst({
-    where: (o, { eq }) => eq(o.id, id),
+    where: (o, { and, eq }) => and(eq(o.id, id), eq(o.shopId, shopId)),
     with: { items: true },
   });
   if (!row) return null;
 
-  // Daily number = how many orders on this order's local day have an order_seq
-  // at or below this one. Stable (later orders never change it) and resets each
-  // day for free, without a stored counter.
+  // Daily number = how many of this shop's orders on this order's local day
+  // have a ref_no at or below this one. Stable (later orders never change it)
+  // and resets each day for free, without a stored counter.
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(orders)
     .where(
       and(
+        eq(orders.shopId, shopId),
         sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = (${row.createdAt.toISOString()}::timestamptz AT TIME ZONE ${STALL_TIMEZONE})::date`,
-        sql`${orders.orderSeq} <= ${row.orderSeq}`,
+        sql`${orders.refNo} <= ${row.refNo}`,
       ),
     );
-  return { ...row, dailyNumber: n };
+  const shop = await getCurrentShop();
+  return { ...row, dailyNumber: n, refLabel: formatRef(shop.refPrefix, row.refNo) };
 }
+
+// An order's per-day number, as a correlated subquery for list selects: how
+// many of the SAME shop's orders on the same local day have a ref_no at or
+// below it.
+// NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
+// ${orders.createdAt}. On a single-table select Drizzle emits columns
+// unqualified ("ref_no"), which the correlated subquery then binds to its own
+// `o2` — counting every order in the day for every row. Qualifying with the
+// outer range name `orders` fixes the correlation.
+const dailyNumberExpr = sql<number>`(
+  select count(*)::int from orders o2
+  where o2.shop_id = orders.shop_id
+    and (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+      = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
+    and o2.ref_no <= orders.ref_no
+)`;
 
 /** One row on the Recent screen — any order from the last rolling 24 hours. */
 export type RecentOrderRow = {
   id: string;
-  orderSeq: number;
+  refNo: number;
   dailyNumber: number;
   status: string; // 'unpaid' | 'paid'
   tableLabel: string | null;
@@ -346,29 +484,24 @@ export type RecentOrderRow = {
  * screen splits these into the unpaid queue and the paid reprint archive.
  */
 export async function getRecentOrders(): Promise<RecentOrderRow[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   return db
     .select({
       id: orders.id,
-      orderSeq: orders.orderSeq,
+      refNo: orders.refNo,
       status: orders.status,
       tableLabel: orders.tableLabel,
       totalCents: orders.totalCents,
       createdAt: orders.createdAt,
-      // NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
-      // ${orders.createdAt}. On a single-table select Drizzle emits columns
-      // unqualified ("order_seq"), which the correlated subquery then binds to
-      // its own `o2` — counting every order in the day for every row. Qualifying
-      // with the outer range name `orders` fixes the correlation.
-      dailyNumber: sql<number>`(
-        select count(*)::int from orders o2
-        where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-            = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-          and o2.order_seq <= orders.order_seq
-      )`,
+      dailyNumber: dailyNumberExpr,
     })
     .from(orders)
-    .where(sql`${orders.createdAt} >= now() - interval '24 hours'`)
+    .where(
+      and(
+        eq(orders.shopId, shopId),
+        sql`${orders.createdAt} >= now() - interval '24 hours'`,
+      ),
+    )
     .orderBy(desc(orders.createdAt));
 }
 
@@ -381,7 +514,7 @@ export async function getTodaySummary(): Promise<{
   orderCount: number;
   paidCents: number;
 }> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const localToday = sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = (now() AT TIME ZONE ${STALL_TIMEZONE})::date`;
   const rows = await db
     .select({
@@ -389,7 +522,7 @@ export async function getTodaySummary(): Promise<{
       paidCents: sql<number>`coalesce(sum(${orders.totalCents}) filter (where ${orders.status} = 'paid'), 0)::int`,
     })
     .from(orders)
-    .where(localToday);
+    .where(and(eq(orders.shopId, shopId), localToday));
   return rows[0] ?? { orderCount: 0, paidCents: 0 };
 }
 
@@ -411,7 +544,7 @@ export type DailySalesRow = {
  * stall's LOCAL day.
  */
 export async function getDailySales(): Promise<DailySalesRow[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   // Group/order by OUTPUT POSITION (the 1st select column), not by re-emitting
   // the day expression: Drizzle renders the column unqualified in SELECT but
   // qualified in GROUP BY, and Postgres then sees two different expressions and
@@ -423,7 +556,7 @@ export async function getDailySales(): Promise<DailySalesRow[]> {
       revenueCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
     })
     .from(orders)
-    .where(eq(orders.status, "paid"))
+    .where(and(eq(orders.shopId, shopId), eq(orders.status, "paid")))
     .groupBy(sql`1`)
     .orderBy(sql`1 desc`);
 }
@@ -449,7 +582,7 @@ export type ItemBreakdownRow = {
 export async function getItemBreakdown(
   localDay: string | null,
 ): Promise<ItemBreakdownRow[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const dayMatch = localDay
     ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
     : undefined;
@@ -462,7 +595,7 @@ export async function getItemBreakdown(
     })
     .from(orderItems)
     .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .where(and(eq(orders.status, "paid"), dayMatch))
+    .where(and(eq(orders.shopId, shopId), eq(orders.status, "paid"), dayMatch))
     .groupBy(orderItems.itemName, orderItems.optionsSnapshot)
     .orderBy(
       sql`sum(${orderItems.quantity}) desc`,
@@ -489,7 +622,7 @@ export type ReportSummary = {
 export async function getReportSummary(
   localDay: string | null,
 ): Promise<ReportSummary> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const dayMatch = localDay
     ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
     : undefined;
@@ -505,7 +638,7 @@ export async function getReportSummary(
       takeawayCount: sql<number>`(count(*) filter (where ${orders.tableLabel} is null))::int`,
     })
     .from(orders)
-    .where(and(eq(orders.status, "paid"), dayMatch));
+    .where(and(eq(orders.shopId, shopId), eq(orders.status, "paid"), dayMatch));
 
   // Item count lives on the lines, so it needs the join.
   const [line] = await db
@@ -514,7 +647,7 @@ export async function getReportSummary(
     })
     .from(orderItems)
     .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .where(and(eq(orders.status, "paid"), dayMatch));
+    .where(and(eq(orders.shopId, shopId), eq(orders.status, "paid"), dayMatch));
 
   return {
     paidOrders: agg?.paidOrders ?? 0,
@@ -543,7 +676,7 @@ export type HourlyRow = {
 export async function getHourlyBreakdown(
   localDay: string | null,
 ): Promise<HourlyRow[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const dayMatch = localDay
     ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
     : undefined;
@@ -554,7 +687,7 @@ export async function getHourlyBreakdown(
       revenueCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
     })
     .from(orders)
-    .where(and(eq(orders.status, "paid"), dayMatch))
+    .where(and(eq(orders.shopId, shopId), eq(orders.status, "paid"), dayMatch))
     .groupBy(sql`1`)
     .orderBy(sql`1`);
 }
@@ -579,7 +712,7 @@ export type DayOrderRow = {
 export async function getOrdersForDay(
   localDay: string | null,
 ): Promise<DayOrderRow[]> {
-  await requireSession();
+  const { shopId } = await requireSession();
   const dayMatch = localDay
     ? sql`(${orders.createdAt} AT TIME ZONE ${STALL_TIMEZONE})::date = ${localDay}::date`
     : undefined;
@@ -589,23 +722,13 @@ export async function getOrdersForDay(
       tableLabel: orders.tableLabel,
       totalCents: orders.totalCents,
       createdAt: orders.createdAt,
-      // NOTE: reference the OUTER order's columns as literal `orders.<col>`, not
-      // ${orders.createdAt}. On a single-table select Drizzle emits columns
-      // unqualified ("order_seq"), which the correlated subquery then binds to
-      // its own `o2` — counting every order in the day for every row. Qualifying
-      // with the outer range name `orders` fixes the correlation.
-      dailyNumber: sql<number>`(
-        select count(*)::int from orders o2
-        where (o2.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-            = (orders.created_at AT TIME ZONE ${STALL_TIMEZONE})::date
-          and o2.order_seq <= orders.order_seq
-      )`,
+      dailyNumber: dailyNumberExpr,
       itemCount: sql<number>`(
         select coalesce(sum(order_items.quantity), 0)::int
         from order_items where order_items.order_id = orders.id
       )`,
     })
     .from(orders)
-    .where(and(eq(orders.status, "paid"), dayMatch))
-    .orderBy(asc(orders.orderSeq));
+    .where(and(eq(orders.shopId, shopId), eq(orders.status, "paid"), dayMatch))
+    .orderBy(asc(orders.refNo));
 }

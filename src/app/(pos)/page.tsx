@@ -1,13 +1,16 @@
 import Link from "next/link";
 
-import { getTodaySummary } from "@/lib/dal";
+import { getCurrentShop, getTodaySummary } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
 
 // The home hub (req #1): pick a station. Not a redirect to /order — three big
 // destination keys plus a live day-strip. Server Component; reads today's
 // takings from the DAL (bucketed by the stall's local day).
 export default async function HomePage() {
-  const { orderCount, paidCents } = await getTodaySummary();
+  const [{ orderCount, paidCents }, shop] = await Promise.all([
+    getTodaySummary(),
+    getCurrentShop(),
+  ]);
 
   const hour = new Date().getHours();
   const greeting =
@@ -17,7 +20,7 @@ export default async function HomePage() {
     <main className="home">
       <div className="home-head">
         <h1>{greeting}</h1>
-        <p>Pick a station to get going.</p>
+        <p>Trading at {shop.name}. Pick a station to get going.</p>
       </div>
 
       <div className="keys">

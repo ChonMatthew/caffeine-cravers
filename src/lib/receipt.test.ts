@@ -12,7 +12,7 @@ import {
 
 const ticket: ReceiptData = {
   dailyNumber: 12,
-  recordNumber: 31,
+  refLabel: "BT-31",
   fulfilment: "Table 5",
   dateStr: "Sat 01 Aug  16:01",
   lines: [
@@ -46,7 +46,7 @@ describe("buildReceiptLines", () => {
     expect(text).not.toContain("TOTAL");
     expect(text).not.toContain("Change");
     expect(text).toMatchInlineSnapshot(`
-      "Order #12                Ref #31
+      "Order #12             Ref #BT-31
       Table 5
       Sat 01 Aug  16:01
       --------------------------------
@@ -98,8 +98,9 @@ describe("buildStationTicketLines", () => {
 
 describe("buildCustomerReceiptLines", () => {
   const customerTicket: CustomerReceiptData = {
+    shopName: "Bukit Tinggi",
     dailyNumber: 12,
-    recordNumber: 31,
+    refLabel: "BT-31",
     fulfilment: "Table 5",
     dateStr: "Sat 01 Aug  16:01",
     lines: [
@@ -117,22 +118,35 @@ describe("buildCustomerReceiptLines", () => {
     }
   });
 
+  it("keeps the longest realistic header within 32 columns", () => {
+    const lines = buildCustomerReceiptLines({
+      ...customerTicket,
+      dailyNumber: 999,
+      refLabel: "BT-99999",
+    });
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(RECEIPT_WIDTH);
+    }
+  });
+
   it("prices every line and totals the payment — unlike the barista ticket", () => {
     expect(buildCustomerReceiptLines(customerTicket).join("\n"))
       .toMatchInlineSnapshot(`
-      "Order #12                Ref #31
-      Table 5
-      Sat 01 Aug  16:01
-      --------------------------------
-      2x Iced Latte           RM 20.00
-         Large
-      1x Cappuccino            RM 7.00
-      --------------------------------
-      TOTAL                   RM 27.00
-      Cash                    RM 30.00
-      Change                   RM 3.00
-      --------------------------------
-      Thank you!"
-    `);
+        "          BUKIT TINGGI
+        --------------------------------
+        Order #12             Ref #BT-31
+        Table 5
+        Sat 01 Aug  16:01
+        --------------------------------
+        2x Iced Latte           RM 20.00
+           Large
+        1x Cappuccino            RM 7.00
+        --------------------------------
+        TOTAL                   RM 27.00
+        Cash                    RM 30.00
+        Change                   RM 3.00
+        --------------------------------
+        Thank you!"
+      `);
   });
 });

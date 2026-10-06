@@ -21,7 +21,7 @@ export type ReceiptLine = {
 
 export type ReceiptData = {
   dailyNumber: number; // "Order #12 today"
-  recordNumber: number; // permanent order_seq
+  refLabel: string; // permanent per-shop Ref #, prefix included: "BT-31"
   fulfilment: string; // already formatted: "Takeaway" | "Dine-in" | "Table 5"
   dateStr: string; // pre-formatted in the stall's local timezone
   lines: ReceiptLine[];
@@ -46,7 +46,7 @@ const divider = "-".repeat(W);
 export function buildReceiptLines(data: ReceiptData): string[] {
   const out: string[] = [];
 
-  out.push(row(`Order #${data.dailyNumber}`, `Ref #${data.recordNumber}`));
+  out.push(row(`Order #${data.dailyNumber}`, `Ref #${data.refLabel}`));
   out.push(data.fulfilment);
   out.push(data.dateStr);
   out.push(divider);
@@ -113,8 +113,9 @@ export type CustomerReceiptLine = {
 };
 
 export type CustomerReceiptData = {
+  shopName: string; // banner line: which shop sold it ("Bukit Tinggi")
   dailyNumber: number;
-  recordNumber: number;
+  refLabel: string;
   fulfilment: string;
   dateStr: string;
   lines: CustomerReceiptLine[];
@@ -123,11 +124,23 @@ export type CustomerReceiptData = {
   changeCents: number;
 };
 
-/** Build the customer copy as 32-col lines: same header, but priced + totalled. */
+/** "text" centered in the full width (truncated if it's somehow longer). */
+function center(text: string): string {
+  const t = text.slice(0, W);
+  return " ".repeat(Math.floor((W - t.length) / 2)) + t;
+}
+
+/**
+ * Build the customer copy as 32-col lines: a shop-name banner, then the same
+ * header, but priced + totalled. (Only the customer copy names the shop — the
+ * barista ticket deliberately doesn't.)
+ */
 export function buildCustomerReceiptLines(data: CustomerReceiptData): string[] {
   const out: string[] = [];
 
-  out.push(row(`Order #${data.dailyNumber}`, `Ref #${data.recordNumber}`));
+  out.push(center(data.shopName.toUpperCase()));
+  out.push(divider);
+  out.push(row(`Order #${data.dailyNumber}`, `Ref #${data.refLabel}`));
   out.push(data.fulfilment);
   out.push(data.dateStr);
   out.push(divider);

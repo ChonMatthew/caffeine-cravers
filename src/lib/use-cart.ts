@@ -16,7 +16,9 @@ import {
   type SelectedOption,
 } from "@/lib/order";
 
-const STORAGE_KEY = "cc-cart-v1";
+// One saved cart PER SHOP: a ticket half-built at one shop never shows up in
+// (or gets placed against) the other shop's catalog after a shop switch.
+const STORAGE_KEY_PREFIX = "cc-cart-v1";
 
 type Persisted = { state: CartState; key: string };
 
@@ -31,15 +33,21 @@ export type AddToCart = {
 
 /**
  * Options for the two modes this hook runs in:
- * - New order (default): starts empty, restores from / persists to localStorage.
+ * - New order (default): starts empty, restores from / persists to localStorage
+ *   under the shop's own key (`shopId`).
  * - Editing an unpaid order: `persist: false` + a pre-seeded `initial` cart.
  *   It stays isolated from the localStorage key so editing an order never
  *   clobbers a new-order ticket the operator has in progress.
  */
-export type UseCartOptions = { initial?: CartState; persist?: boolean };
+export type UseCartOptions = {
+  shopId?: string;
+  initial?: CartState;
+  persist?: boolean;
+};
 
 export function useCart(opts?: UseCartOptions) {
   const persist = opts?.persist ?? true;
+  const storageKey = `${STORAGE_KEY_PREFIX}:${opts?.shopId ?? ""}`;
   const [state, dispatch] = useReducer(cartReducer, opts?.initial ?? EMPTY_CART);
   // The idempotency key isn't rendered, so it lives in a ref (no re-render, no
   // setState-in-effect). It's populated on mount, before any item can be added.
@@ -56,7 +64,7 @@ export function useCart(opts?: UseCartOptions) {
       return;
     }
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey);
       const parsed = raw ? (JSON.parse(raw) as Partial<Persisted>) : null;
       if (parsed?.state?.lines) {
         dispatch({
@@ -72,7 +80,7 @@ export function useCart(opts?: UseCartOptions) {
     } catch {
       keyRef.current = crypto.randomUUID();
     }
-  }, [persist]);
+  }, [persist, storageKey]);
 
   // Persist on every change. Skip the very first run (the empty mount state) so
   // we never clobber a saved cart before the restore dispatch lands. In edit
@@ -85,11 +93,11 @@ export function useCart(opts?: UseCartOptions) {
     }
     try {
       const payload: Persisted = { state, key: keyRef.current };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch {
       // storage full / unavailable — non-fatal, the cart just won't survive a reload
     }
-  }, [state, persist]);
+  }, [state, persist, storageKey]);
 
   const add = useCallback((p: AddToCart) => {
     dispatch({ type: "add", ...p });

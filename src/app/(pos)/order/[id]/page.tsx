@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import type { OrderItem } from "@/db/schema";
-import { getOrderById } from "@/lib/dal";
+import { getCurrentShop, getOrderById } from "@/lib/dal";
 import { formatCents } from "@/lib/money";
 import { formatFulfilment } from "@/lib/order";
 import type { CustomerReceiptData, ReceiptData } from "@/lib/receipt";
@@ -52,7 +52,8 @@ export default async function OrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const order = await getOrderById(id);
+  // Another shop's order id is not found here — the DAL scopes by session shop.
+  const [order, shop] = await Promise.all([getOrderById(id), getCurrentShop()]);
   if (!order) notFound();
 
   const paid = order.status === "paid";
@@ -60,7 +61,7 @@ export default async function OrderDetailPage({
   // The printed barista ticket — no prices, no payment (requirement change #1/#3).
   const receipt: ReceiptData = {
     dailyNumber: order.dailyNumber,
-    recordNumber: order.orderSeq,
+    refLabel: order.refLabel,
     fulfilment: formatFulfilment(order.tableLabel),
     dateStr: receiptDateFmt.format(order.createdAt),
     lines: order.items.map((l) => ({
@@ -76,8 +77,9 @@ export default async function OrderDetailPage({
   // tendered/change, not the unpaid placeholders shown above).
   const customerReceipt: CustomerReceiptData | null = paid
     ? {
+        shopName: shop.name,
         dailyNumber: order.dailyNumber,
-        recordNumber: order.orderSeq,
+        refLabel: order.refLabel,
         fulfilment: formatFulfilment(order.tableLabel),
         dateStr: receiptDateFmt.format(order.createdAt),
         lines: order.items.map((l) => ({
@@ -101,7 +103,7 @@ export default async function OrderDetailPage({
         <h2>{paid ? "Order confirmed" : "Order Placed"}</h2>
         <div className="ordernum">
           Order #{order.dailyNumber}
-          <span className="rec">record #{order.orderSeq}</span>
+          <span className="rec">ref #{order.refLabel}</span>
         </div>
         <div className="sub">
           {formatFulfilment(order.tableLabel)} ·{" "}

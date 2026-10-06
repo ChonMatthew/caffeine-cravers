@@ -8,16 +8,33 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
 import type { OptionSnapshot, Station } from "@/lib/order";
+
+// --- shops: the two places the stall trades from ------------------------------
+// Two fixed rows (seeded by the migration): 'bukit-tinggi' and 'cheras'. Each
+// shop owns its own catalog and orders; nothing is shared across them. The slug
+// id and ref_prefix are never renamed — `name` is just display text.
+export const shops = pgTable("shops", {
+  id: text("id").primaryKey(), // slug: 'bukit-tinggi' | 'cheras'
+  name: text("name").notNull(), // "Bukit Tinggi"
+  // Prefix on the shop's Ref # ("BT" -> "BT-12"). Unique so a printed Ref # can
+  // never belong to both shops.
+  refPrefix: text("ref_prefix").notNull().unique(),
+});
 
 // --- items: the menu catalog --------------------------------------------------
 export const items = pgTable(
   "items",
   {
     id: uuid("id").primaryKey().defaultRandom(), // gen_random_uuid()
+    // The shop whose menu this item is on. Option groups/options inherit it.
+    shopId: text("shop_id")
+      .notNull()
+      .references(() => shops.id),
     name: text("name").notNull(),
     // Money is stored as whole cents in an integer. Never a float/decimal.
     priceCents: integer("price_cents").notNull(),
@@ -37,6 +54,8 @@ export const items = pgTable(
   (t) => [
     check("items_price_nonneg", sql`${t.priceCents} >= 0`),
     check("items_station_valid", sql`${t.station} in ('food', 'drink')`),
+    // Every catalog read filters by shop.
+    index("items_shop_idx").on(t.shopId),
   ],
 );
 
@@ -81,7 +100,13 @@ export const options = pgTable(
 // --- relations: ORM-only wiring (no SQL/migration) ---------------------------
 // These let `db.query.items.findMany({ with: { optionGroups: … } })` fetch the
 // whole nested shape in one query instead of hand-stitching three selects.
-export const itemsRelations = relations(items, ({ many }) => ({
+export const shopsRelations = relations(shops, ({ many }) => ({
+  items: many(items),
+  orders: many(orders),
+}));
+
+export const itemsRelations = relations(items, ({ one, many }) => ({
+  shop: one(shops, { fields: [items.shopId], references: [shops.id] }),
   optionGroups: many(optionGroups),
 }));
 
@@ -108,12 +133,20 @@ export const orders = pgTable(
   "orders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Human-facing RECORD NUMBER, assigned by Postgres at insert. Monotonic,
-    // never reused (gaps are fine) — the running count of orders ever placed.
-    // The operator-facing per-DAY number ("Order 12 today") is DERIVED at read
-    // time from this + the local day, never stored. GENERATED ALWAYS = the app
-    // never sets it, so it can't collide with the idempotency-retry path.
+    // INTERNAL insert counter, assigned by Postgres, global across shops. Never
+    // printed or shown — the human-facing number is the per-shop `ref_no`.
+    // GENERATED ALWAYS = the app never sets it.
     orderSeq: integer("order_seq").generatedAlwaysAsIdentity(),
+    // The shop this sale belongs to. Orders are only ever read within a shop.
+    shopId: text("shop_id")
+      .notNull()
+      .references(() => shops.id),
+    // Human-facing Ref #, counted PER SHOP (1, 2, 3… with no gaps) and printed
+    // with the shop's prefix ("BT-12"). Assigned in the same INSERT as
+    // max(ref_no)+1 for the shop; UNIQUE (shop_id, ref_no) below is the actual
+    // guarantee. The per-DAY number ("Order 12 today") is DERIVED at read time
+    // from this + the local day, never stored.
+    refNo: integer("ref_no").notNull(),
     // Order lifecycle: 'unpaid' -> 'paid'. An order is persisted 'unpaid' the
     // moment it's placed (Phase 4); Phase 4.5 takes it to 'paid'. We never
     // DELETE a sale. ('paid' is admitted by the check now so 4.5 only adds
@@ -148,6 +181,10 @@ export const orders = pgTable(
     ),
     // Reports group by day; without this index that query table-scans.
     index("orders_created_at_idx").on(t.createdAt),
+    // Every order read is shop-scoped, and reports bucket by day within a shop.
+    index("orders_shop_created_at_idx").on(t.shopId, t.createdAt),
+    // One Ref # per shop, ever — also what serializes a (theoretical) race.
+    unique("orders_shop_ref_no_unique").on(t.shopId, t.refNo),
   ],
 );
 
@@ -187,7 +224,8 @@ export const orderItems = pgTable(
 );
 
 // Order <-> lines wiring for nested reads (db.query.orders.findFirst({ with })).
-export const ordersRelations = relations(orders, ({ many }) => ({
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  shop: one(shops, { fields: [orders.shopId], references: [shops.id] }),
   items: many(orderItems),
 }));
 
@@ -199,6 +237,7 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
 }));
 
 // --- Inferred types: the app imports these instead of hand-writing shapes -----
+export type Shop = typeof shops.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type OptionGroup = typeof optionGroups.$inferSelect;
